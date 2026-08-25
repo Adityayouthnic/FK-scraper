@@ -16,11 +16,6 @@
       <line x1="4" y1="12" x2="20" y2="12"/><circle class="icon-solid" cx="8" cy="12" r="2"/>
       <line x1="4" y1="18" x2="20" y2="18"/><circle class="icon-solid" cx="16" cy="18" r="2"/>
     </symbol>
-    <symbol id="icon-help" viewBox="0 0 24 24">
-      <circle cx="12" cy="12" r="9"/>
-      <path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.8.4-1.3 1-1.3 1.9v.3"/>
-      <circle class="icon-solid" cx="12" cy="17" r="0.9"/>
-    </symbol>
     <symbol id="icon-dashboard" viewBox="0 0 24 24">
       <rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/>
       <rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>
@@ -34,107 +29,87 @@
       <path d="M3 7v10a2 2 0 0 0 2 2h14a1 1 0 0 0 1-1v-8a1 1 0 0 0-1-1H5a2 2 0 0 1-2-2z"/>
       <circle class="icon-solid" cx="16" cy="14" r="1.4"/>
     </symbol>
-    <symbol id="icon-support" viewBox="0 0 24 24">
-      <circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3.5"/>
-      <line x1="5.5" y1="5.5" x2="9" y2="9"/><line x1="15" y1="15" x2="18.5" y2="18.5"/>
-      <line x1="18.5" y1="5.5" x2="15" y2="9"/><line x1="9" y1="15" x2="5.5" y2="18.5"/>
-    </symbol>
     <symbol id="icon-play" viewBox="0 0 24 24">
       <path class="icon-solid" d="M8 5v14l11-7z"/>
     </symbol>
+    <symbol id="icon-browser" viewBox="0 0 24 24">
+      <rect x="3" y="5" width="18" height="14" rx="2"/>
+      <line x1="3" y1="9" x2="21" y2="9"/>
+    </symbol>
   </svg>
 
-  <nav class="topnav">
-    <span class="topnav-title">Wallet Scraper</span>
-    <div class="topnav-actions">
-      <button class="icon-btn" type="button" aria-label="Settings"><svg class="icon"><use href="#icon-settings"/></svg></button>
-      <button class="icon-btn" type="button" aria-label="Help"><svg class="icon"><use href="#icon-help"/></svg></button>
-    </div>
-  </nav>
-
-  <aside class="sidebar">
-    <div class="sidebar-header">
-      <div class="sidebar-label">System Status</div>
-      <div class="sidebar-title">Command Center</div>
-      <div class="sidebar-version">v1.0.0</div>
-    </div>
-    <div class="sidebar-nav">
-      <a class="sidebar-link active" href="#"><svg class="icon"><use href="#icon-dashboard"/></svg>Dashboard</a>
-      <a class="sidebar-link" href="#"><svg class="icon"><use href="#icon-logs"/></svg>Logs</a>
-      <a class="sidebar-link" href="#"><svg class="icon"><use href="#icon-wallet"/></svg>Wallets</a>
-      <a class="sidebar-link" href="#"><svg class="icon"><use href="#icon-settings"/></svg>Settings</a>
-    </div>
-    <div class="sidebar-footer">
-      <a class="sidebar-link" href="#"><svg class="icon"><use href="#icon-support"/></svg>Support</a>
+  <aside class="sidebar-slim">
+    <span class="brand-mark">FK</span>
+    <nav class="sidebar-slim-nav">
+      <a class="slim-link active" href="#" title="Dashboard"><svg class="icon"><use href="#icon-dashboard"/></svg></a>
+      <a class="slim-link" href="#" title="Logs"><svg class="icon"><use href="#icon-logs"/></svg></a>
+      <a class="slim-link" href="#" title="Wallets"><svg class="icon"><use href="#icon-wallet"/></svg></a>
+    </nav>
+    <div class="sidebar-slim-footer">
+      <a class="slim-link" href="#" title="Settings"><svg class="icon"><use href="#icon-settings"/></svg></a>
     </div>
   </aside>
 
-  <main class="app-main">
-    <header class="page-header">
-      <div class="brand">
-        <span class="brand-mark">FK</span>
-        <div>
-          <h1 class="page-title">Wallet Scraper</h1>
-          <p class="page-subtitle">Flipkart Seller &middot; Ads Wallet</p>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="topbar-left">
+        <span class="topbar-title">Wallet Scraper</span>
+        <span class="topbar-sep">/</span>
+        <span class="topbar-subtitle">Flipkart Seller &middot; Ads Wallet</span>
+        <div id="status-pill" class="status-pill status-idle">
+          <span class="status-dot"></span>
+          <span id="status-text">Idle</span>
         </div>
       </div>
-      <div id="status-pill" class="status-pill status-idle">
-        <span class="status-dot"></span>
-        <span id="status-text">Idle</span>
+      <div class="topbar-right">
+        <div class="header-stats">
+          <div class="header-stat">
+            <span class="header-stat-label">Status</span>
+            <span class="header-stat-value" id="stat-status">Idle</span>
+          </div>
+          <div class="header-divider"></div>
+          <div class="header-stat">
+            <span class="header-stat-label">Last Run</span>
+            <span class="header-stat-value" id="stat-last-run">&mdash;</span>
+          </div>
+          <div class="header-divider"></div>
+          <div class="header-stat">
+            <span class="header-stat-label">Result</span>
+            <span class="header-stat-value" id="stat-last-result">&mdash;</span>
+          </div>
+        </div>
+        <button id="run-btn" class="run-btn" type="button">
+          <svg class="icon icon-solid"><use href="#icon-play"/></svg>
+          <span>Run Scraper</span>
+        </button>
       </div>
     </header>
 
-    <section class="stats">
-      <div class="glass-card stat">
-        <div class="stat-label">Status</div>
-        <div class="stat-value" id="stat-status">Idle</div>
-        <svg class="stat-spark" preserveAspectRatio="none" viewBox="0 0 100 100">
-          <path d="M0 100 L0 50 Q25 20, 50 60 T100 30 L100 100 Z" fill="currentColor"></path>
-        </svg>
-      </div>
-      <div class="glass-card stat">
-        <div class="stat-label">Last Run</div>
-        <div class="stat-value" id="stat-last-run">&mdash;</div>
-      </div>
-      <div class="glass-card stat">
-        <div class="stat-label">Last Result</div>
-        <div class="stat-value" id="stat-last-result">&mdash;</div>
-      </div>
-    </section>
-
-    <div class="grid-columns">
-      <div class="main-column">
-        <section class="glass-card run-card">
-          <div>
-            <h3>Run scraper</h3>
-            <p>Logs into Flipkart Seller and opens the Ads Wallet summary.</p>
-          </div>
-          <button id="run-btn" class="run-btn" type="button">
-            <svg class="icon icon-solid"><use href="#icon-play"/></svg>
-            Run
-          </button>
-        </section>
-
-        <section class="glass-card panel">
+    <main class="app-main">
+      <div class="workspace-grid">
+        <section class="panel">
           <div class="panel-header">
             <div class="window-dots"><span></span><span></span><span></span></div>
-            <span id="live-badge" class="live-badge"><span class="live-dot"></span>LIVE</span>
+            <span id="live-badge" class="live-badge"><span class="ping-dot"></span>Live View</span>
           </div>
           <div class="view-wrap">
             <img id="live-view" alt="The live browser view appears here while a run is in progress. Click and type on it to control the remote browser." draggable="false" />
-            <p id="view-placeholder">Live browser view will appear here while running. You can click and type directly into it — e.g. to solve a captcha or click Login.</p>
+            <div id="view-placeholder" class="view-placeholder-content">
+              <svg class="icon"><use href="#icon-browser"/></svg>
+              <p>Live browser view will appear here while running. You can click and type directly into it — e.g. to solve a captcha or click Login.</p>
+            </div>
           </div>
         </section>
-      </div>
 
-      <section class="glass-card panel log-panel">
-        <div class="panel-header">
-          <span class="stat-label" style="margin:0">Activity Log</span>
-        </div>
-        <pre id="log"></pre>
-      </section>
-    </div>
-  </main>
+        <section class="panel">
+          <div class="panel-header">
+            <span class="header-stat-label" style="font-size:12px;text-transform:none;letter-spacing:normal;color:var(--text-secondary);font-weight:600">Activity Log</span>
+          </div>
+          <pre id="log"></pre>
+        </section>
+      </div>
+    </main>
+  </div>
 
   <script src="/app.js"></script>
 </body>

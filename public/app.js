@@ -52,7 +52,7 @@ function setStatus(state) {
   liveBadge.classList.toggle('active', isRunning);
   if (!isRunning) {
     liveView.style.display = 'none';
-    viewPlaceholder.style.display = 'block';
+    viewPlaceholder.style.display = 'flex';
   }
 }
 
