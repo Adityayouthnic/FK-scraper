@@ -20,15 +20,6 @@ function appendLog(message) {
   log.scrollTop = log.scrollHeight;
 }
 
-function getToken() {
-  let token = localStorage.getItem('fk_scraper_token');
-  if (!token) {
-    token = prompt('Enter access code:') || '';
-    localStorage.setItem('fk_scraper_token', token);
-  }
-  return token;
-}
-
 ws.addEventListener('open', () => appendLog('Connected to server.'));
 ws.addEventListener('close', () => appendLog('Disconnected from server.'));
 
@@ -58,7 +49,9 @@ ws.addEventListener('message', (event) => {
     case 'error':
       appendLog(`Error: ${msg.message}`);
       if (msg.message === 'Invalid access code.') {
-        localStorage.removeItem('fk_scraper_token');
+        const token = prompt('Enter access code:') || '';
+        localStorage.setItem('fk_scraper_token', token);
+        appendLog('Access code saved. Click Run again.');
       }
       break;
   }
@@ -66,7 +59,8 @@ ws.addEventListener('message', (event) => {
 
 runBtn.addEventListener('click', () => {
   log.textContent = '';
-  ws.send(JSON.stringify({ type: 'run', token: getToken() }));
+  const token = localStorage.getItem('fk_scraper_token') || '';
+  ws.send(JSON.stringify({ type: 'run', token }));
 });
 
 // --- Relay mouse/keyboard into the remote browser via the live view ---
