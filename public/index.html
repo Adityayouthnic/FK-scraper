@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>FK Wallet Scraper</title>
+<link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <main>
+    <h1>FK Wallet Scraper</h1>
+    <div class="controls">
+      <button id="run-btn">Run</button>
+      <span id="status-text">Idle</span>
+    </div>
+
+    <div class="view-wrap">
+      <img id="live-view" alt="The live browser view appears here while a run is in progress." />
+      <p id="view-placeholder">Live browser view will appear here while running.</p>
+    </div>
+
+    <pre id="log"></pre>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>

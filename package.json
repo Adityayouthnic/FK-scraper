@@ -1,0 +1,16 @@
+{
+  "name": "fk-scraper",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Flipkart wallet scraper with a live browser view, deployed on Cloud Run, writing results to Google Sheets.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "googleapis": "^140.0.0",
+    "playwright": "1.55.1",
+    "ws": "^8.18.0"
+  }
+}
