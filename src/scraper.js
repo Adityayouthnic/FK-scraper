@@ -1,5 +1,44 @@
 const { chromium } = require('playwright');
-const { appendWalletRow } = require('./sheets');
+const { login } = require('./flipkartLogin');
+
+const WALLET_URL = 'https://seller.flipkart.com/index.html#dashboard/ads/wallet/summary';
+const VIEWPORT = { width: 1024, height: 768 };
+
+// Tracks the single in-flight Playwright page, if any, so incoming input
+// events (mouse/keyboard from the live view) can be relayed to it. There is
+// at most one active run at a time (enforced in server.js).
+let activePage = null;
+
+async function dispatchInput(evt) {
+  if (!activePage) return;
+  try {
+    switch (evt.event) {
+      case 'mousemove':
+        await activePage.mouse.move(evt.x, evt.y);
+        break;
+      case 'mousedown':
+        await activePage.mouse.move(evt.x, evt.y);
+        await activePage.mouse.down({ button: evt.button || 'left' });
+        break;
+      case 'mouseup':
+        await activePage.mouse.up({ button: evt.button || 'left' });
+        break;
+      case 'wheel':
+        await activePage.mouse.wheel(evt.deltaX || 0, evt.deltaY || 0);
+        break;
+      case 'keydown':
+        await activePage.keyboard.down(evt.key);
+        break;
+      case 'keyup':
+        await activePage.keyboard.up(evt.key);
+        break;
+      default:
+        break;
+    }
+  } catch {
+    // Page may be mid-navigation when an input event arrives; drop it.
+  }
+}
 
 async function runScrapeJob(send) {
   const browser = await chromium.launch({
@@ -7,14 +46,15 @@ async function runScrapeJob(send) {
     args: ['--no-sandbox', '--disable-dev-shm-usage'],
   });
 
-  const page = await browser.newPage({ viewport: { width: 1024, height: 768 } });
+  const page = await browser.newPage({ viewport: VIEWPORT });
+  activePage = page;
   const client = await page.context().newCDPSession(page);
 
   await client.send('Page.startScreencast', {
     format: 'jpeg',
     quality: 60,
-    maxWidth: 1024,
-    maxHeight: 768,
+    maxWidth: VIEWPORT.width,
+    maxHeight: VIEWPORT.height,
     everyNthFrame: 1,
   });
 
@@ -28,39 +68,25 @@ async function runScrapeJob(send) {
   });
 
   try {
-    const walletData = await scrapeFlipkartWallet(page, send);
-    send('log', { message: 'Writing to Google Sheet...' });
-    const rowsAdded = await appendWalletRow(walletData);
-    send('log', { message: `Wrote ${rowsAdded} row(s) to the sheet.` });
-    return { rowsAdded };
+    await login(page, send);
+
+    send('log', { message: 'Opening wallet summary...' });
+    await page.goto(WALLET_URL, { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(1500); // let the SPA route render after the hash change
+    send('log', { message: `On wallet page: ${page.url()}` });
+
+    // TODO: data extraction + Google Sheets write go here once the actual
+    // scraping requirements are shared (see src/sheets.js:appendWalletRow).
+    send('log', { message: 'Login + navigation to wallet summary complete.' });
+
+    return { rowsAdded: 0 };
   } finally {
     try {
       await client.send('Page.stopScreencast');
     } catch {}
+    activePage = null;
     await browser.close();
   }
 }
 
-// --- Placeholder: replace the body of this function with your existing ---
-// --- Flipkart wallet login + scraping steps. Everything above and below ---
-// --- (screencast streaming, Sheets write, WebSocket wiring) already works. ---
-async function scrapeFlipkartWallet(page, send) {
-  send('log', { message: 'Opening Flipkart...' });
-  await page.goto('https://www.flipkart.com', { waitUntil: 'domcontentloaded' });
-
-  // TODO: swap in your real steps, e.g.:
-  //   await page.fill('#login-email-input-selector', process.env.FLIPKART_EMAIL);
-  //   await page.fill('#login-password-input-selector', process.env.FLIPKART_PASSWORD);
-  //   await page.click('button[type=submit]');
-  //   await page.goto('https://www.flipkart.com/account/wallet');
-  //   const balance = await page.textContent('.wallet-balance-selector');
-
-  send('log', { message: 'Placeholder run finished — plug in your real scraping steps here.' });
-
-  return {
-    scrapedAt: new Date().toISOString(),
-    balance: 'N/A (placeholder)',
-  };
-}
-
-module.exports = { runScrapeJob };
+module.exports = { runScrapeJob, dispatchInput };

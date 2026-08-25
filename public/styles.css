@@ -49,6 +49,9 @@ h1 {
 #live-view {
   display: none;
   max-width: 100%;
+  cursor: crosshair;
+  user-select: none;
+  -webkit-user-drag: none;
 }
 
 #view-placeholder {

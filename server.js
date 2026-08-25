@@ -2,7 +2,7 @@ const path = require('path');
 const http = require('http');
 const express = require('express');
 const { WebSocketServer } = require('ws');
-const { runScrapeJob } = require('./src/scraper');
+const { runScrapeJob, dispatchInput } = require('./src/scraper');
 
 const app = express();
 app.use(express.static(path.join(__dirname, 'public')));
@@ -11,6 +11,11 @@ const server = http.createServer(app);
 const wss = new WebSocketServer({ server, path: '/ws' });
 
 let isRunning = false;
+// The single WS connection allowed to send input (mouse/keyboard) into the
+// live view: whichever connection's token-verified 'run' message started
+// the current job. Prevents another tab/visitor from hijacking control
+// mid-run even if they're connected to the same server.
+let activeWs = null;
 
 wss.on('connection', (ws) => {
   const send = (type, payload = {}) => {
@@ -30,6 +35,13 @@ wss.on('connection', (ws) => {
       return;
     }
 
+    if (msg.type === 'input') {
+      if (ws === activeWs) {
+        dispatchInput(msg);
+      }
+      return;
+    }
+
     if (msg.type !== 'run') return;
 
     const requiredToken = process.env.ACCESS_TOKEN;
@@ -44,6 +56,7 @@ wss.on('connection', (ws) => {
     }
 
     isRunning = true;
+    activeWs = ws;
     send('status', { state: 'running' });
 
     try {
@@ -54,6 +67,7 @@ wss.on('connection', (ws) => {
       send('error', { message: err.message || 'Run failed.' });
     } finally {
       isRunning = false;
+      activeWs = null;
       send('status', { state: 'idle' });
     }
   });
