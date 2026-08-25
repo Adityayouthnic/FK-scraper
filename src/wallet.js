@@ -9,30 +9,73 @@ const { MONTH_NAMES, MONTH_ABBRS, monthOrdinal } = require('./dateUtil');
 
 const WALLET_URL_MARKER = 'wallet/summary';
 
-async function dismissOverlays(page, send) {
+// Promotional popups ("Exclusive Ad Credit Bonus Plan" and similar upsells)
+// rotate their copy over time, so matching today's exact wording is a
+// losing battle — these match on common close affordances instead, tried
+// in order from most to least specific.
+const GENERIC_CLOSE_PATTERNS = [
+  '[aria-label="close" i]',
+  '[role="dialog"] button:has-text("Close")',
+  'button:has-text("Close")',
+  '[aria-label*="close" i]',
+  'button:has-text("×")', // ×
+  'button:has-text("✕")', // ✕
+  'button:has-text("Not now")',
+  'button:has-text("Maybe later")',
+  'button:has-text("No thanks")',
+];
+
+// Overlays can stack (a promo popup on top of another), and dismissing one
+// can reveal the next, so this sweeps repeatedly until nothing is left to
+// close instead of assuming a single pass is enough.
+async function dismissOverlays(page, send, maxRounds = 5) {
   const step = 'wallet.dismiss_overlays';
 
-  try {
-    const modalClose = page.locator(WalletSelectors.MODAL_CLOSE_BUTTON).first();
-    if (await waitVisibleQuick(page, WalletSelectors.MODAL_CLOSE_BUTTON, 3000)) {
-      await humanPause(send, step);
-      await modalClose.click();
-      log(send, step, 'Dismissed modal dialog');
-      await page.waitForTimeout(500);
-    }
-  } catch {
-    // no modal — fine
-  }
+  for (let round = 0; round < maxRounds; round += 1) {
+    let dismissedSomething = false;
 
-  try {
-    if (await waitVisibleQuick(page, WalletSelectors.TOUR_SKIP_BUTTON, 3000)) {
-      await humanPause(send, step);
-      await page.locator(WalletSelectors.TOUR_SKIP_BUTTON).first().click();
-      log(send, step, 'Skipped guided tour');
-      await page.waitForTimeout(500);
+    try {
+      if (await waitVisibleQuick(page, WalletSelectors.MODAL_CLOSE_BUTTON, 1200)) {
+        await humanPause(send, step);
+        await page.locator(WalletSelectors.MODAL_CLOSE_BUTTON).first().click();
+        log(send, step, 'Dismissed modal dialog');
+        await page.waitForTimeout(500);
+        dismissedSomething = true;
+      }
+    } catch {
+      // no modal — fine
     }
-  } catch {
-    // no tour tooltip — fine
+
+    try {
+      if (await waitVisibleQuick(page, WalletSelectors.TOUR_SKIP_BUTTON, 1200)) {
+        await humanPause(send, step);
+        await page.locator(WalletSelectors.TOUR_SKIP_BUTTON).first().click();
+        log(send, step, 'Skipped guided tour');
+        await page.waitForTimeout(500);
+        dismissedSomething = true;
+      }
+    } catch {
+      // no tour tooltip — fine
+    }
+
+    if (!dismissedSomething) {
+      for (const pattern of GENERIC_CLOSE_PATTERNS) {
+        try {
+          if (await waitVisibleQuick(page, pattern, 400)) {
+            await humanPause(send, step);
+            await page.locator(pattern).first().click();
+            log(send, step, `Dismissed a popup (generic close match: ${pattern})`);
+            await page.waitForTimeout(500);
+            dismissedSomething = true;
+            break;
+          }
+        } catch {
+          // this pattern didn't match — try the next
+        }
+      }
+    }
+
+    if (!dismissedSomething) break; // nothing left to close this round
   }
 }
 
@@ -278,4 +321,4 @@ async function downloadWalletReport(page, send, targetDate) {
   return targetPath;
 }
 
-module.exports = { navigateToWallet, selectDate, downloadWalletReport, WALLET_URL_MARKER };
+module.exports = { navigateToWallet, selectDate, downloadWalletReport, dismissOverlays, WALLET_URL_MARKER };
