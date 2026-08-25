@@ -25,57 +25,99 @@ const GENERIC_CLOSE_PATTERNS = [
   'button:has-text("No thanks")',
 ];
 
+// Clicks the target and reports success only if it actually made the
+// element go away. This matters for things like a genuine "Skip to main
+// content" accessibility link elsewhere on the page, which the loose Skip
+// selector can match: clicking it just does an in-page anchor jump and the
+// link stays put, so without this check it would look like "progress" every
+// round forever and the loop would never terminate on its own.
+async function tryClick(page, send, step, selector, timeoutMs, successMessage) {
+  try {
+    const loc = page.locator(selector).first();
+    if (!(await waitVisibleQuick(page, selector, timeoutMs))) return false;
+    await humanPause(send, step);
+    await loc.click();
+    await page.waitForTimeout(400);
+    const stillVisible = await loc.isVisible().catch(() => false);
+    if (stillVisible) return false; // clicking it didn't actually dismiss anything
+    log(send, step, successMessage);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Forcibly removes any lingering full/large-overlay-looking element: fixed
+// or absolute-positioned, sizeable relative to the viewport, and either a
+// dialog role or a meaningful z-index. Last resort for when nothing has an
+// identifiable "Close" affordance to click — never touches the page's own
+// root containers.
+async function forceRemoveOverlays(page, send) {
+  const step = 'wallet.dismiss_overlays.force';
+  const removed = await page.evaluate(() => {
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    let count = 0;
+    for (const el of document.querySelectorAll('body *')) {
+      if (el === document.body || el.id === 'app' || el.id === 'root') continue;
+      const style = window.getComputedStyle(el);
+      if (style.display === 'none' || style.visibility === 'hidden') continue;
+      if (style.position !== 'fixed' && style.position !== 'absolute') continue;
+
+      const rect = el.getBoundingClientRect();
+      if (rect.width < vw * 0.3 || rect.height < vh * 0.2) continue;
+
+      const zIndex = parseInt(style.zIndex, 10);
+      const role = el.getAttribute('role');
+      const looksLikeOverlay =
+        (Number.isFinite(zIndex) && zIndex >= 5) || role === 'dialog' || role === 'alertdialog';
+      if (!looksLikeOverlay) continue;
+
+      el.remove();
+      count += 1;
+    }
+    return count;
+  });
+  if (removed > 0) {
+    warn(send, step, `Force-removed ${removed} lingering overlay element(s) with no identifiable Close button`);
+  }
+  return removed;
+}
+
 // Overlays can stack (a promo popup on top of another), and dismissing one
 // can reveal the next, so this sweeps repeatedly until nothing is left to
-// close instead of assuming a single pass is enough.
+// close instead of assuming a single pass is enough. Every candidate is
+// tried every round — an earlier match (e.g. a loosely-matching "Skip"
+// selector catching unrelated text elsewhere on the page) must never skip
+// the rest of the sweep, or a real popup's Close button can be missed
+// entirely while something irrelevant gets clicked instead.
 async function dismissOverlays(page, send, maxRounds = 5) {
   const step = 'wallet.dismiss_overlays';
 
   for (let round = 0; round < maxRounds; round += 1) {
-    let dismissedSomething = false;
+    let dismissedCount = 0;
 
-    try {
-      if (await waitVisibleQuick(page, WalletSelectors.MODAL_CLOSE_BUTTON, 1200)) {
-        await humanPause(send, step);
-        await page.locator(WalletSelectors.MODAL_CLOSE_BUTTON).first().click();
-        log(send, step, 'Dismissed modal dialog');
-        await page.waitForTimeout(500);
-        dismissedSomething = true;
-      }
-    } catch {
-      // no modal — fine
+    if (await tryClick(page, send, step, WalletSelectors.MODAL_CLOSE_BUTTON, 1200, 'Dismissed modal dialog')) {
+      dismissedCount += 1;
     }
-
-    try {
-      if (await waitVisibleQuick(page, WalletSelectors.TOUR_SKIP_BUTTON, 1200)) {
-        await humanPause(send, step);
-        await page.locator(WalletSelectors.TOUR_SKIP_BUTTON).first().click();
-        log(send, step, 'Skipped guided tour');
-        await page.waitForTimeout(500);
-        dismissedSomething = true;
-      }
-    } catch {
-      // no tour tooltip — fine
+    if (await tryClick(page, send, step, WalletSelectors.TOUR_SKIP_BUTTON, 1200, 'Skipped guided tour')) {
+      dismissedCount += 1;
     }
-
-    if (!dismissedSomething) {
-      for (const pattern of GENERIC_CLOSE_PATTERNS) {
-        try {
-          if (await waitVisibleQuick(page, pattern, 400)) {
-            await humanPause(send, step);
-            await page.locator(pattern).first().click();
-            log(send, step, `Dismissed a popup (generic close match: ${pattern})`);
-            await page.waitForTimeout(500);
-            dismissedSomething = true;
-            break;
-          }
-        } catch {
-          // this pattern didn't match — try the next
-        }
+    for (const pattern of GENERIC_CLOSE_PATTERNS) {
+      if (await tryClick(page, send, step, pattern, 800, `Dismissed a popup (close match: ${pattern})`)) {
+        dismissedCount += 1;
+        break; // one generic match per round is enough; the next round re-scans
       }
     }
 
-    if (!dismissedSomething) break; // nothing left to close this round
+    if (dismissedCount > 0) continue; // something changed — re-scan from the top
+
+    // Nothing had a Close/Skip affordance we could find. Per your ask: get
+    // rid of whatever's still blocking rather than getting stuck here.
+    await page.keyboard.press('Escape').catch(() => {});
+    await page.waitForTimeout(300);
+    const forceRemoved = await forceRemoveOverlays(page, send);
+    if (forceRemoved === 0) break; // truly nothing left to do
   }
 }
 
