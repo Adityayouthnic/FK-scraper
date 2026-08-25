@@ -19,11 +19,15 @@ let lastMoveSent = 0;
 const proto = location.protocol === 'https:' ? 'wss' : 'ws';
 const ws = new WebSocket(`${proto}://${location.host}/ws`);
 
+const LOG_TAGS = { info: 'INFO', done: 'DONE', error: 'ERR' };
+
 function appendLog(message, kind) {
   const time = new Date().toLocaleTimeString();
+  const cls = kind || 'info';
+  const tag = LOG_TAGS[cls];
   const line = document.createElement('div');
-  line.className = kind ? `log-line ${kind}` : 'log-line';
-  line.innerHTML = `<span class="ts">[${time}]</span> `;
+  line.className = `log-line ${cls}`;
+  line.innerHTML = `<span class="ts">${time}</span> <span class="tag">[${tag}]</span> `;
   line.append(message);
   log.appendChild(line);
   log.scrollTop = log.scrollHeight;
@@ -32,8 +36,8 @@ function appendLog(message, kind) {
 function classifyLog(message) {
   const lower = message.toLowerCase();
   if (lower.startsWith('error')) return 'error';
-  if (lower.includes('detected') || lower.includes('complete')) return 'success';
-  return null;
+  if (lower.includes('detected') || lower.includes('complete')) return 'done';
+  return 'info';
 }
 
 const STATUS_LABELS = { idle: 'Idle', running: 'Running...', done: 'Done', error: 'Error' };
@@ -70,7 +74,7 @@ ws.addEventListener('message', (event) => {
       setStatus(msg.state);
       break;
     case 'done':
-      appendLog(`Done. Rows added: ${msg.rowsAdded}`, 'success');
+      appendLog(`Done. Rows added: ${msg.rowsAdded}`, 'done');
       statLastRun.textContent = new Date().toLocaleTimeString();
       statLastResult.textContent = 'Success';
       break;
