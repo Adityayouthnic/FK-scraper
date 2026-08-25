@@ -4,41 +4,59 @@
 const path = require('path');
 const { settings } = require('./config');
 const { WalletSelectors } = require('./selectors');
-const { log, warn, humanPause, stepPause, safeClick, waitVisibleQuick } = require('./utils');
+const { log, warn, humanPause, stepPause, safeClick, screenshotOnError } = require('./utils');
 const { MONTH_NAMES, MONTH_ABBRS, monthOrdinal } = require('./dateUtil');
 
 const WALLET_URL_MARKER = 'wallet/summary';
 
 // Promotional popups ("Exclusive Ad Credit Bonus Plan" and similar upsells)
 // rotate their copy over time, so matching today's exact wording is a
-// losing battle — these match on common close affordances instead, tried
-// in order from most to least specific.
-const GENERIC_CLOSE_PATTERNS = [
-  '[aria-label="close" i]',
+// losing battle — these match on common close affordances instead, in
+// priority order (most specific first).
+const CLOSE_SELECTORS = [
+  WalletSelectors.MODAL_CLOSE_BUTTON,
   '[role="dialog"] button:has-text("Close")',
-  'button:has-text("Close")',
+  '[aria-label="close" i]',
   '[aria-label*="close" i]',
+  'button:has-text("Close")',
   'button:has-text("×")', // ×
   'button:has-text("✕")', // ✕
   'button:has-text("Not now")',
   'button:has-text("Maybe later")',
   'button:has-text("No thanks")',
+  WalletSelectors.TOUR_SKIP_BUTTON,
 ];
 
-// Clicks the target and reports success only if it actually made the
-// element go away. This matters for things like a genuine "Skip to main
-// content" accessibility link elsewhere on the page, which the loose Skip
-// selector can match: clicking it just does an in-page anchor jump and the
-// link stays put, so without this check it would look like "progress" every
-// round forever and the loop would never terminate on its own.
-async function tryClick(page, send, step, selector, timeoutMs, successMessage) {
+// Instant "is this on screen right now?" check. Deliberately NOT
+// waitVisibleQuick: that blocks for its full timeout on every miss, and
+// this runs across a dozen selectors several times per page — the waiting
+// version turned overlay cleanup into a ~1 minute stall per call.
+async function isVisibleNow(page, selector) {
   try {
     const loc = page.locator(selector).first();
-    if (!(await waitVisibleQuick(page, selector, timeoutMs))) return false;
-    await humanPause(send, step);
-    await loc.click();
-    await page.waitForTimeout(400);
-    const stillVisible = await loc.isVisible().catch(() => false);
+    if ((await loc.count()) === 0) return false;
+    return await loc.isVisible();
+  } catch {
+    return false;
+  }
+}
+
+// Clicks the target and reports success only if it actually made that
+// specific element go away. Needed because a genuine "Skip to main content"
+// accessibility link matches the loose Skip selector but only performs an
+// in-page anchor jump — without this check it looks like progress every
+// round forever. The handle is captured before the click so re-resolving
+// the selector to a *different* matching element can't fake a success.
+async function tryClick(page, send, step, selector, successMessage) {
+  try {
+    const loc = page.locator(selector).first();
+    if (!(await isVisibleNow(page, selector))) return false;
+    const handle = await loc.elementHandle();
+    if (!handle) return false;
+    await humanPause(send, step, 80, 200);
+    await loc.click({ timeout: 3000 });
+    await page.waitForTimeout(250);
+    const stillVisible = await handle.isVisible().catch(() => false);
     if (stillVisible) return false; // clicking it didn't actually dismiss anything
     log(send, step, successMessage);
     return true;
@@ -47,11 +65,10 @@ async function tryClick(page, send, step, selector, timeoutMs, successMessage) {
   }
 }
 
-// Forcibly removes any lingering full/large-overlay-looking element: fixed
-// or absolute-positioned, sizeable relative to the viewport, and either a
+// Forcibly removes any lingering overlay-looking element: fixed or
+// absolute-positioned, sizeable relative to the viewport, and either a
 // dialog role or a meaningful z-index. Last resort for when nothing has an
-// identifiable "Close" affordance to click — never touches the page's own
-// root containers.
+// identifiable "Close" affordance to click.
 async function forceRemoveOverlays(page, send) {
   const step = 'wallet.dismiss_overlays.force';
   const removed = await page.evaluate(() => {
@@ -73,6 +90,13 @@ async function forceRemoveOverlays(page, send) {
         (Number.isFinite(zIndex) && zIndex >= 5) || role === 'dialog' || role === 'alertdialog';
       if (!looksLikeOverlay) continue;
 
+      // The date-picker dropdown is itself absolutely positioned, large and
+      // high z-index, so it matches every test above — never destroy the
+      // very control the run depends on. Calendars are <table>s and the
+      // panel carries a Done button; promo popups have neither.
+      if (el.querySelector('table')) continue;
+      if (/\bDone\b/.test(el.textContent || '') && el.querySelector('td, table')) continue;
+
       el.remove();
       count += 1;
     }
@@ -84,40 +108,39 @@ async function forceRemoveOverlays(page, send) {
   return removed;
 }
 
-// Overlays can stack (a promo popup on top of another), and dismissing one
-// can reveal the next, so this sweeps repeatedly until nothing is left to
-// close instead of assuming a single pass is enough. Every candidate is
-// tried every round — an earlier match (e.g. a loosely-matching "Skip"
-// selector catching unrelated text elsewhere on the page) must never skip
-// the rest of the sweep, or a real popup's Close button can be missed
-// entirely while something irrelevant gets clicked instead.
-async function dismissOverlays(page, send, maxRounds = 5) {
+/**
+ * Clear anything covering the page. Overlays can stack (dismissing one
+ * reveals the next), so this sweeps repeatedly until a round finds nothing
+ * left to close.
+ *
+ * settleMs waits once up front for a popup to animate in; after that every
+ * check is instant, so a page with no popups costs ~1s total rather than
+ * the ~60s the timeout-per-selector version did.
+ */
+async function dismissOverlays(page, send, { maxRounds = 6, settleMs = 700, force = true } = {}) {
   const step = 'wallet.dismiss_overlays';
+  await page.waitForTimeout(settleMs);
 
   for (let round = 0; round < maxRounds; round += 1) {
-    let dismissedCount = 0;
-
-    if (await tryClick(page, send, step, WalletSelectors.MODAL_CLOSE_BUTTON, 1200, 'Dismissed modal dialog')) {
-      dismissedCount += 1;
-    }
-    if (await tryClick(page, send, step, WalletSelectors.TOUR_SKIP_BUTTON, 1200, 'Skipped guided tour')) {
-      dismissedCount += 1;
-    }
-    for (const pattern of GENERIC_CLOSE_PATTERNS) {
-      if (await tryClick(page, send, step, pattern, 800, `Dismissed a popup (close match: ${pattern})`)) {
-        dismissedCount += 1;
-        break; // one generic match per round is enough; the next round re-scans
+    let dismissed = false;
+    for (const selector of CLOSE_SELECTORS) {
+      if (await tryClick(page, send, step, selector, `Dismissed overlay (${selector})`)) {
+        dismissed = true;
+        break; // something changed — re-scan from the top of the list
       }
     }
 
-    if (dismissedCount > 0) continue; // something changed — re-scan from the top
+    if (dismissed) {
+      await page.waitForTimeout(250); // let the next one animate in, if any
+      continue;
+    }
 
-    // Nothing had a Close/Skip affordance we could find. Per your ask: get
-    // rid of whatever's still blocking rather than getting stuck here.
+    // Nothing had a Close/Skip affordance we could find. Get rid of whatever
+    // is still blocking rather than getting stuck here.
+    if (!force) return;
     await page.keyboard.press('Escape').catch(() => {});
-    await page.waitForTimeout(300);
-    const forceRemoved = await forceRemoveOverlays(page, send);
-    if (forceRemoved === 0) break; // truly nothing left to do
+    await page.waitForTimeout(200);
+    if ((await forceRemoveOverlays(page, send)) === 0) return; // truly nothing left
   }
 }
 
@@ -173,35 +196,102 @@ async function navigateToWallet(page, send) {
   log(send, step, `Wallet page loaded — current URL: ${page.url()}`);
 }
 
+// True once the calendar panel is actually on screen, so a failed trigger
+// click surfaces as a clear error instead of a confusing downstream one.
+async function isPickerOpen(page) {
+  return (await isVisibleNow(page, WalletSelectors.CUSTOM_DONE_XPATH))
+    || (await isVisibleNow(page, WalletSelectors.CUSTOM_DONE_FALLBACK))
+    || (await isVisibleNow(page, '(//table[contains(@class, "__MonthWrapper-sc-")])[1]'));
+}
+
+// Reads whatever the date-range control currently displays ("Last 30 days :
+// 26-Jul-26 - 25-Aug-26", "Yesterday : 24-Aug-26", ...) for verification.
+async function readDateDisplay(page) {
+  try {
+    const loc = page.locator(WalletSelectors.DATE_PICKER_TRIGGER_XPATH).first();
+    if ((await loc.count()) === 0) return '';
+    return (await loc.innerText()).replace(/\s+/g, ' ').trim();
+  } catch {
+    return '';
+  }
+}
+
+// Commits the picker selection. The "Yesterday" preset was previously
+// assumed to auto-apply, but the panel keeps a Done button for every path
+// and the selection doesn't stick without it — so always confirm.
+async function clickDone(page, send, step) {
+  for (const selector of [WalletSelectors.CUSTOM_DONE_XPATH, WalletSelectors.CUSTOM_DONE_FALLBACK]) {
+    if (await isVisibleNow(page, selector)) {
+      await humanPause(send, step, 150, 350);
+      await page.locator(selector).first().click({ timeout: 5000 });
+      log(send, step, "Clicked 'Done' to apply the selection");
+      await page.waitForTimeout(600);
+      return true;
+    }
+  }
+  warn(send, step, "No 'Done' button found — assuming the selection auto-applied");
+  return false;
+}
+
 /**
  * Open the date picker and select targetDate ({y,m,d}).
- * Yesterday goes through the reliable "Yesterday" preset. Any other (older)
- * date is a backfill and goes through the custom dual calendar.
+ * Yesterday goes through the "Yesterday" preset. Any other (older) date is
+ * a backfill and goes through the custom dual calendar. Either way the
+ * selection is committed with Done.
  */
 async function selectDate(page, send, targetDate, isYesterday) {
   const step = 'wallet.date_select';
+  const label = `${String(targetDate.d).padStart(2, '0')}-${MONTH_ABBRS[targetDate.m]}-${targetDate.y}`;
 
+  // Runs before the picker is opened, so force-removal can't race with the
+  // panel being on screen.
   await dismissOverlays(page, send);
 
-  log(send, `${step}.open`, `Opening date picker for ${targetDate.d}-${MONTH_ABBRS[targetDate.m]}-${targetDate.y}`);
+  log(send, `${step}.open`, `Opening date picker for ${label}`);
   await safeClick(page, WalletSelectors.DATE_PICKER_TRIGGER_XPATH, WalletSelectors.DATE_PICKER_TRIGGER_FALLBACK,
     `${step}.open`, send);
+  await page.waitForTimeout(1200);
 
-  await page.waitForTimeout(1500);
+  if (!(await isPickerOpen(page))) {
+    // One retry: a stray overlay can swallow the first click.
+    warn(send, `${step}.open`, 'Date picker did not open on the first click — retrying once');
+    await dismissOverlays(page, send, { settleMs: 200 });
+    await safeClick(page, WalletSelectors.DATE_PICKER_TRIGGER_XPATH, WalletSelectors.DATE_PICKER_TRIGGER_FALLBACK,
+      `${step}.open`, send);
+    await page.waitForTimeout(1200);
+    if (!(await isPickerOpen(page))) {
+      throw new Error(`[${step}.open] Date picker did not open for ${label}`);
+    }
+  }
+  log(send, `${step}.open`, 'Date picker is open');
 
   if (isYesterday) {
     log(send, `${step}.yesterday`, "Selecting 'Yesterday'");
     await safeClick(page, WalletSelectors.YESTERDAY_OPTION_XPATH, WalletSelectors.YESTERDAY_OPTION_FALLBACK,
       `${step}.yesterday`, send);
-    await stepPause(send, `${step}.yesterday`);
+    await page.waitForTimeout(600);
   } else {
     await selectCustomDate(page, send, targetDate);
   }
 
+  await clickDone(page, send, `${step}.done`);
+
   log(send, `${step}.wait`, `Waiting ${settings.DATA_LOAD_WAIT_MS}ms for data to load`);
   await page.waitForTimeout(settings.DATA_LOAD_WAIT_MS);
+  await page.waitForLoadState('networkidle', { timeout: settings.PAGE_LOAD_TIMEOUT_MS }).catch(() => {});
 
-  log(send, step, `Date selection complete — ${targetDate.d}-${MONTH_ABBRS[targetDate.m]}-${targetDate.y}`);
+  // Verify rather than assume: a silently-unapplied selection would
+  // otherwise download the wrong date's report and push it under the right
+  // date's label in the sheet — corrupt data that looks correct.
+  const display = await readDateDisplay(page);
+  const shortLabel = `${String(targetDate.d).padStart(2, '0')}-${MONTH_ABBRS[targetDate.m]}-${String(targetDate.y).slice(-2)}`;
+  if (display && !display.includes(shortLabel) && !display.includes(label)) {
+    warn(send, step, `Date control reads "${display}" — expected it to show ${shortLabel}. Continuing, but the downloaded report may not match.`);
+  } else if (display) {
+    log(send, step, `Date control now reads "${display}"`);
+  }
+
+  log(send, step, `Date selection complete — ${label}`);
 }
 
 async function readSide(page, monthBadge, yearBadge) {
@@ -261,8 +351,9 @@ async function bringDateIntoView(page, send, targetDate, maxSteps = 24) {
 
 /**
  * Select one specific past date from the always-visible dual calendar.
- * There is no "Custom" button — page the correct month into view, click its
- * day cell twice (range start then end == same day), then "Done".
+ * There is no "Custom" button — page the correct month into view, then click
+ * its day cell twice (range start then end == same day). Committing with
+ * "Done" is left to the caller, which does it for every path.
  */
 async function selectCustomDate(page, send, targetDate) {
   const step = 'wallet.date_select.custom';
@@ -275,10 +366,6 @@ async function selectCustomDate(page, send, targetDate) {
     await safeClick(page, dayXPath, null, `${step}.day`, send);
     await page.waitForTimeout(400);
   }
-
-  log(send, `${step}.done`, "Clicking 'Done'");
-  await safeClick(page, WalletSelectors.CUSTOM_DONE_XPATH, WalletSelectors.CUSTOM_DONE_FALLBACK, `${step}.done`, send);
-  await stepPause(send, step);
 }
 
 const MONTHS_3 = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -290,49 +377,56 @@ async function downloadWalletReport(page, send, targetDate) {
   log(send, step, `Starting download for ${dateStr}`);
   await humanPause(send, `${step}.click`);
 
-  // Locate the download icon by inspecting the DOM: it's the element
-  // immediately after the date display area ("Yesterday : 12-May-26" or
-  // similar), with a small-SVG fallback heuristic if that structure moves.
-  const monthChecks = MONTHS_3.map((m) => `t.includes('-${m}-')`).join(' || ');
-  const iconHandle = await page.evaluateHandle(`
-    (() => {
-        const allEls = [...document.querySelectorAll('*')];
-        const dateEl = allEls.find(el => {
-            const t = el.textContent || '';
-            return (t.includes('Yesterday') || t.includes('Custom'))
-                && (${monthChecks})
-                && el.children.length === 0
-                && el.offsetWidth > 0;
-        });
+  // The download icon sits immediately to the right of the date-range
+  // control, on the same row. Anchoring the search to that control's live
+  // position — rather than the hardcoded viewport pixel ranges this used
+  // before — keeps it working across window sizes and layout tweaks.
+  const iconHandle = await page.evaluateHandle(() => {
+    const isShown = (el) => {
+      const r = el.getBoundingClientRect();
+      return r.width > 0 && r.height > 0;
+    };
 
-        if (dateEl) {
-            let container = dateEl.parentElement;
-            for (let i = 0; i < 5; i++) {
-                if (!container) break;
-                const next = container.nextElementSibling;
-                if (next) {
-                    const svg = next.querySelector('svg') || next;
-                    if (svg.offsetWidth > 0 && svg.offsetWidth < 100) return svg;
-                }
-                container = container.parentElement;
-            }
-        }
+    let dateEl = document.querySelector('div.date[role="presentation"]');
+    if (!dateEl || !isShown(dateEl)) {
+      dateEl = [...document.querySelectorAll('*')].find((el) => {
+        const t = (el.textContent || '').trim();
+        return el.children.length === 0
+          && isShown(el)
+          && /(Yesterday|Today|Custom|Last\s+\d+\s+days)\s*:/i.test(t);
+      });
+    }
 
-        const svgs = [...document.querySelectorAll('svg')];
-        const candidates = svgs.filter(svg => {
-            const rect = svg.getBoundingClientRect();
-            return rect.right > 1100 && rect.width < 60 && rect.height < 60
-                && rect.top > 300 && rect.top < 500;
-        });
-        if (candidates.length > 0) return candidates[candidates.length - 1];
+    if (dateEl) {
+      const dateRect = dateEl.getBoundingClientRect();
+      const clickable = [...document.querySelectorAll('svg, button, [role="button"], a, img, i')];
+      const toTheRight = clickable
+        .map((el) => ({ el, r: el.getBoundingClientRect() }))
+        .filter(({ el, r }) => {
+          if (r.width === 0 || r.height === 0) return false;
+          if (r.width > 90 || r.height > 90) return false;   // an icon, not a panel
+          if (el.contains(dateEl) || dateEl.contains(el)) return false;
+          if (r.left < dateRect.right - 4) return false;      // must be to the right
+          const overlap = Math.min(r.bottom, dateRect.bottom) - Math.max(r.top, dateRect.top);
+          return overlap > Math.min(r.height, dateRect.height) * 0.4; // same row
+        })
+        .sort((a, b) => a.r.left - b.r.left);
+      if (toTheRight.length > 0) return toTheRight[0].el; // nearest icon to its right
+    }
 
-        return null;
-    })()
-  `);
+    // Explicit download affordances, if the site ever labels them.
+    const labelled = [...document.querySelectorAll(
+      '[class*="download" i], [aria-label*="download" i], [title*="download" i]'
+    )].filter(isShown);
+    if (labelled.length > 0) return labelled[0];
+
+    return null;
+  });
 
   const downloadIcon = iconHandle ? iconHandle.asElement() : null;
   if (!downloadIcon) {
-    throw new Error('[wallet.download] Could not locate download icon');
+    await screenshotOnError(page, step, send);
+    throw new Error('[wallet.download] Could not locate the download icon next to the date control');
   }
 
   log(send, `${step}.click`, 'Clicking download icon');
