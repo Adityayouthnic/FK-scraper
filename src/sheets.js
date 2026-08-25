@@ -67,6 +67,13 @@ function parseCsv(csvPath) {
   return rows;
 }
 
+// Sheet names with spaces or other special characters (like "1.DATA Ads")
+// must be single-quoted in A1-notation ranges, or the Sheets API rejects
+// the range/misparses it. Always quoting is safe even for simple names.
+function quoteSheetName(name) {
+  return `'${name.replace(/'/g, "''")}'`;
+}
+
 let sheetsClientPromise = null;
 function getSheetsClient() {
   if (!sheetsClientPromise) {
@@ -107,7 +114,7 @@ async function openWorksheet(send) {
 }
 
 async function colValues(ws, colLetter) {
-  const range = `${ws.sheetName}!${colLetter}:${colLetter}`;
+  const range = `${quoteSheetName(ws.sheetName)}!${colLetter}:${colLetter}`;
   const res = await ws.sheets.spreadsheets.values.get({ spreadsheetId: ws.spreadsheetId, range });
   const values = res.data.values || [];
   return values.map((row) => (row[0] !== undefined ? String(row[0]) : ''));
@@ -269,7 +276,7 @@ async function pushToSheet(csvPath, targetDate, send) {
     log(send, step, `Expanded sheet by ${extra} rows`);
   }
 
-  const cellRange = `${ws.sheetName}!A${startRow}:L${endRow}`;
+  const cellRange = `${quoteSheetName(ws.sheetName)}!A${startRow}:L${endRow}`;
   await ws.sheets.spreadsheets.values.update({
     spreadsheetId: ws.spreadsheetId,
     range: cellRange,
