@@ -7,20 +7,64 @@
 <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
-  <main>
-    <h1>FK Wallet Scraper</h1>
-    <div class="controls">
-      <button id="run-btn">Run</button>
-      <span id="status-text">Idle</span>
-    </div>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark">FK</span>
+        <div class="brand-text">
+          <div class="brand-title">Wallet Scraper</div>
+          <div class="brand-subtitle">Flipkart Seller &middot; Ads Wallet</div>
+        </div>
+      </div>
+      <div id="status-pill" class="status-pill status-idle">
+        <span class="status-dot"></span>
+        <span id="status-text">Idle</span>
+      </div>
+    </header>
 
-    <div class="view-wrap">
-      <img id="live-view" alt="The live browser view appears here while a run is in progress. Click and type on it to control the remote browser." draggable="false" />
-      <p id="view-placeholder">Live browser view will appear here while running. You can click and type directly into it — e.g. to solve a captcha or click Login.</p>
-    </div>
+    <main class="content">
+      <section class="stats">
+        <div class="stat">
+          <div class="stat-label">Status</div>
+          <div class="stat-value" id="stat-status">Idle</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Last run</div>
+          <div class="stat-value" id="stat-last-run">&mdash;</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Last result</div>
+          <div class="stat-value" id="stat-last-result">&mdash;</div>
+        </div>
+      </section>
 
-    <pre id="log"></pre>
-  </main>
+      <section class="card run-card">
+        <div>
+          <h2>Run scraper</h2>
+          <p class="muted">Logs into Flipkart Seller and opens the Ads Wallet summary.</p>
+        </div>
+        <button id="run-btn" class="run-btn">Run</button>
+      </section>
+
+      <section class="card">
+        <div class="card-header">
+          <h2>Live browser view</h2>
+          <span id="live-badge" class="live-badge"><span class="live-dot"></span>LIVE</span>
+        </div>
+        <div class="view-wrap">
+          <img id="live-view" alt="The live browser view appears here while a run is in progress. Click and type on it to control the remote browser." draggable="false" />
+          <p id="view-placeholder">Live browser view will appear here while running. You can click and type directly into it — e.g. to solve a captcha or click Login.</p>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-header">
+          <h2>Activity log</h2>
+        </div>
+        <pre id="log"></pre>
+      </section>
+    </main>
+  </div>
   <script src="/app.js"></script>
 </body>
 </html>

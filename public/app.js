@@ -1,8 +1,13 @@
 const runBtn = document.getElementById('run-btn');
 const statusText = document.getElementById('status-text');
+const statusPill = document.getElementById('status-pill');
 const liveView = document.getElementById('live-view');
 const viewPlaceholder = document.getElementById('view-placeholder');
+const liveBadge = document.getElementById('live-badge');
 const log = document.getElementById('log');
+const statStatus = document.getElementById('stat-status');
+const statLastRun = document.getElementById('stat-last-run');
+const statLastResult = document.getElementById('stat-last-result');
 
 // Must match VIEWPORT in src/scraper.js.
 const VIEWPORT_WIDTH = 1024;
@@ -14,20 +19,47 @@ let lastMoveSent = 0;
 const proto = location.protocol === 'https:' ? 'wss' : 'ws';
 const ws = new WebSocket(`${proto}://${location.host}/ws`);
 
-function appendLog(message) {
+function appendLog(message, kind) {
   const time = new Date().toLocaleTimeString();
-  log.textContent += `[${time}] ${message}\n`;
+  const line = document.createElement('div');
+  line.className = kind ? `log-line ${kind}` : 'log-line';
+  line.innerHTML = `<span class="ts">[${time}]</span> `;
+  line.append(message);
+  log.appendChild(line);
   log.scrollTop = log.scrollHeight;
 }
 
+function classifyLog(message) {
+  const lower = message.toLowerCase();
+  if (lower.startsWith('error')) return 'error';
+  if (lower.includes('detected') || lower.includes('complete')) return 'success';
+  return null;
+}
+
+const STATUS_LABELS = { idle: 'Idle', running: 'Running...', done: 'Done', error: 'Error' };
+
+function setStatus(state) {
+  isRunning = state === 'running';
+  statusPill.className = `status-pill status-${state}`;
+  const label = STATUS_LABELS[state] || state;
+  statusText.textContent = label;
+  statStatus.textContent = label;
+  runBtn.disabled = isRunning;
+  liveBadge.classList.toggle('active', isRunning);
+  if (!isRunning) {
+    liveView.style.display = 'none';
+    viewPlaceholder.style.display = 'block';
+  }
+}
+
 ws.addEventListener('open', () => appendLog('Connected to server.'));
-ws.addEventListener('close', () => appendLog('Disconnected from server.'));
+ws.addEventListener('close', () => appendLog('Disconnected from server.', 'error'));
 
 ws.addEventListener('message', (event) => {
   const msg = JSON.parse(event.data);
   switch (msg.type) {
     case 'log':
-      appendLog(msg.message);
+      appendLog(msg.message, classifyLog(msg.message));
       break;
     case 'frame':
       viewPlaceholder.style.display = 'none';
@@ -35,19 +67,17 @@ ws.addEventListener('message', (event) => {
       liveView.src = `data:image/jpeg;base64,${msg.data}`;
       break;
     case 'status':
-      isRunning = msg.state === 'running';
-      statusText.textContent = isRunning ? 'Running...' : 'Idle';
-      runBtn.disabled = isRunning;
-      if (!isRunning) {
-        liveView.style.display = 'none';
-        viewPlaceholder.style.display = 'block';
-      }
+      setStatus(msg.state);
       break;
     case 'done':
-      appendLog(`Done. Rows added: ${msg.rowsAdded}`);
+      appendLog(`Done. Rows added: ${msg.rowsAdded}`, 'success');
+      statLastRun.textContent = new Date().toLocaleTimeString();
+      statLastResult.textContent = 'Success';
       break;
     case 'error':
-      appendLog(`Error: ${msg.message}`);
+      appendLog(`Error: ${msg.message}`, 'error');
+      statLastRun.textContent = new Date().toLocaleTimeString();
+      statLastResult.textContent = 'Failed';
       if (msg.message === 'Invalid access code.') {
         const token = prompt('Enter access code:') || '';
         localStorage.setItem('fk_scraper_token', token);
