@@ -74,7 +74,7 @@ ws.addEventListener('message', (event) => {
       setStatus(msg.state);
       break;
     case 'done':
-      appendLog(`Done. Rows added: ${msg.rowsAdded}`, 'done');
+      appendLog(`Done. ${msg.datesProcessed || 0} date(s) processed, ${msg.rowsAdded} row(s) added.`, 'done');
       statLastRun.textContent = new Date().toLocaleTimeString();
       statLastResult.textContent = 'Success';
       break;

@@ -1,8 +1,13 @@
-const { chromium } = require('playwright');
+const { settings } = require('./config');
+const { launchBrowser } = require('./browser');
+const { loadSession, saveSession } = require('./session');
 const { login } = require('./flipkartLogin');
+const { navigateToWallet, selectDate, downloadWalletReport } = require('./wallet');
+const { getPresentDates, missingDatesInWindow, pushToSheet } = require('./sheets');
+const { log, warn } = require('./utils');
+const { dateKey, formatDMonY, todayIST, addDays } = require('./dateUtil');
 
-const WALLET_URL = 'https://seller.flipkart.com/index.html#dashboard/ads/wallet/summary';
-const VIEWPORT = { width: 1024, height: 768 };
+const VIEWPORT = { width: settings.VIEWPORT_WIDTH, height: settings.VIEWPORT_HEIGHT };
 
 // Tracks the single in-flight Playwright page, if any, so incoming input
 // events (mouse/keyboard from the live view) can be relayed to it. There is
@@ -41,15 +46,12 @@ async function dispatchInput(evt) {
 }
 
 async function runScrapeJob(send) {
-  const browser = await chromium.launch({
-    headless: true,
-    args: ['--no-sandbox', '--disable-dev-shm-usage'],
-  });
-
-  const page = await browser.newPage({ viewport: VIEWPORT });
+  const savedSession = await loadSession(send);
+  const { browser, context } = await launchBrowser(send, { storageState: savedSession, useStealth: true });
+  const page = await context.newPage();
   activePage = page;
-  const client = await page.context().newCDPSession(page);
 
+  const client = await context.newCDPSession(page);
   await client.send('Page.startScreencast', {
     format: 'jpeg',
     quality: 60,
@@ -57,7 +59,6 @@ async function runScrapeJob(send) {
     maxHeight: VIEWPORT.height,
     everyNthFrame: 1,
   });
-
   client.on('Page.screencastFrame', async ({ data, sessionId }) => {
     send('frame', { data });
     try {
@@ -68,18 +69,56 @@ async function runScrapeJob(send) {
   });
 
   try {
-    await login(page, send);
+    let loggedIn = false;
 
-    send('log', { message: 'Opening wallet summary...' });
-    await page.goto(WALLET_URL, { waitUntil: 'domcontentloaded' });
-    await page.waitForTimeout(1500); // let the SPA route render after the hash change
-    send('log', { message: `On wallet page: ${page.url()}` });
+    if (savedSession) {
+      try {
+        await navigateToWallet(page, send);
+        loggedIn = true;
+      } catch (navErr) {
+        warn(send, 'session', `Saved session didn't work (${navErr.message}) — logging in fresh.`);
+      }
+    }
 
-    // TODO: data extraction + Google Sheets write go here once the actual
-    // scraping requirements are shared (see src/sheets.js:appendWalletRow).
-    send('log', { message: 'Login + navigation to wallet summary complete.' });
+    if (!loggedIn) {
+      await login(page, send);
+      await saveSession(context, send);
+      await navigateToWallet(page, send);
+    }
 
-    return { rowsAdded: 0 };
+    const presentDates = await getPresentDates(send);
+    const missing = missingDatesInWindow(presentDates, settings.LOOKBACK_DAYS);
+
+    if (missing.length === 0) {
+      log(send, 'run', 'Sheet is already up to date — nothing to backfill.');
+      return { rowsAdded: 0, datesProcessed: 0 };
+    }
+
+    log(send, 'run', `${missing.length} date(s) missing from the sheet: ${missing.map(formatDMonY).join(', ')}`);
+
+    const yesterdayKey = dateKey(addDays(todayIST(), -1));
+    let totalRows = 0;
+    let failures = 0;
+
+    for (const targetDate of missing) {
+      const label = formatDMonY(targetDate);
+      try {
+        log(send, 'run', `--- Processing ${label} ---`);
+        const isYesterday = dateKey(targetDate) === yesterdayKey;
+        await selectDate(page, send, targetDate, isYesterday);
+        const csvPath = await downloadWalletReport(page, send, targetDate);
+        const rows = await pushToSheet(csvPath, targetDate, send);
+        totalRows += rows;
+      } catch (err) {
+        failures += 1;
+        warn(send, 'run', `Failed processing ${label}: ${err.message}`);
+      }
+    }
+
+    log(send, 'run',
+      `Done: ${missing.length - failures}/${missing.length} date(s) processed successfully, ${totalRows} row(s) added.`);
+
+    return { rowsAdded: totalRows, datesProcessed: missing.length, failures };
   } finally {
     try {
       await client.send('Page.stopScreencast');
