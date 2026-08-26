@@ -1,4 +1,15 @@
 node_modules
 .git
+.gcloudignore
+
+# Secrets must never be baked into the image — they arrive at runtime from
+# Secret Manager (Cloud Run) or a local file (dev). Listed here as defence
+# in depth: the Dockerfile copies named paths rather than `COPY . .`, so
+# these aren't picked up today, but a future broad COPY would grab them.
 .env
+.env.*
+service-account.json
+*-service-account.json
+
 *.log
+downloads/

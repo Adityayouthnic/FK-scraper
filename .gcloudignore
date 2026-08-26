@@ -1,0 +1,23 @@
+# Controls what `gcloud run deploy --source .` uploads to Cloud Build.
+#
+# IMPORTANT: when this file exists it REPLACES gcloud's default behaviour of
+# falling back to .gitignore. Secrets are listed explicitly here so they can
+# never be uploaded into a build, regardless of what .gitignore says.
+.git
+.gitignore
+
+# Secrets — these reach the container through Secret Manager at runtime,
+# never by being baked into the image.
+.env
+.env.*
+!.env.example
+service-account.json
+*-service-account.json
+
+# Rebuilt inside the image by `npm ci`; uploading it is slow and can carry
+# platform-specific binaries that break the Linux build.
+node_modules/
+
+*.log
+.DS_Store
+downloads/
