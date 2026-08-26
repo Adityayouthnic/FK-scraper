@@ -294,9 +294,18 @@ async function pushToSheet(csvPath, targetDate, send) {
       `=IF(OR(G${sheetRow}="Redeem",G${sheetRow}="EXPIRE_AUTH_TOPUP"),` +
       `D${sheetRow}*-1,D${sheetRow})`;
 
+    // Mirror Python's float(): convert only when the WHOLE string is
+    // numeric, otherwise pass the original through untouched.
+    //
+    // parseFloat() must not be used here — it parses a leading prefix, so
+    // the comma-grouped amounts Flipkart exports ("1,234.50") would silently
+    // become 1. Leaving such a value as a string is correct: USER_ENTERED
+    // makes Sheets parse "1,234.50" as 1234.5 itself, which is exactly what
+    // the Python did.
     let gross = row['gross_amount'] || '';
-    const grossNum = parseFloat(gross);
-    if (Number.isFinite(grossNum)) gross = grossNum;
+    const grossText = String(gross).trim();
+    const grossNum = Number(grossText);
+    if (grossText !== '' && Number.isFinite(grossNum)) gross = grossNum;
 
     return [
       aVal,
