@@ -31,7 +31,11 @@ const settings = {
   ELEMENT_TIMEOUT_MS: int('ELEMENT_TIMEOUT_MS', 20000),
   PAGE_LOAD_TIMEOUT_MS: int('PAGE_LOAD_TIMEOUT_MS', 45000),
   DATA_LOAD_WAIT_MS: int('DATA_LOAD_WAIT_MS', 3000),
-  DOWNLOAD_TIMEOUT_MS: int('DOWNLOAD_TIMEOUT_MS', 30000),
+  // Clicking the download icon kicks off server-side report generation
+  // ("Your download is in progress. Please stay on the page.") and the file
+  // only arrives once that finishes, so this covers generation + transfer,
+  // not just transfer.
+  DOWNLOAD_TIMEOUT_MS: int('DOWNLOAD_TIMEOUT_MS', 180000),
 
   HUMAN_PAUSE_MIN_MS: int('HUMAN_PAUSE_MIN_MS', 300),
   HUMAN_PAUSE_MAX_MS: int('HUMAN_PAUSE_MAX_MS', 900),

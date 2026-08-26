@@ -11,8 +11,13 @@ const { loadServiceAccountCredentials } = require('./googleAuth');
 const { log, warn } = require('./utils');
 const { dateKey, formatDMonY, parseDateLoose, addDays, todayIST, compareDate } = require('./dateUtil');
 
-const CSV_HEADER_ROW = 7;
-const CSV_DATA_START = 8;
+// Flipkart's export carries 6 metadata lines before the real header, so the
+// header has historically been row 7. That's only a fallback now: the header
+// is located by looking for the row that actually contains "Transaction Id",
+// so a change in how many preamble lines they emit can't silently shift every
+// column by a row.
+const FALLBACK_HEADER_ROW = 7;
+const HEADER_MARKER = 'transaction id';
 
 function parseCsvLine(line) {
   const fields = [];
@@ -44,27 +49,77 @@ function parseCsvLine(line) {
   return fields;
 }
 
-// Parses the wallet CSV, skipping the 6 metadata lines Flipkart puts at
-// the top of the export.
-function parseCsv(csvPath) {
-  const allLines = fs.readFileSync(csvPath, 'utf8').split(/\r?\n/);
-  const headerLine = allLines[CSV_HEADER_ROW - 1].trim();
-  const headers = parseCsvLine(headerLine).map((h) => h.trim());
+// Turns a matrix of cell values into objects keyed by the report's own
+// header row, wherever that row happens to be.
+function rowsFromMatrix(matrix) {
+  let headerIdx = matrix.findIndex((cells) =>
+    cells.some((c) => String(c ?? '').trim().toLowerCase() === HEADER_MARKER));
+  if (headerIdx === -1) headerIdx = FALLBACK_HEADER_ROW - 1;
+  if (headerIdx < 0 || headerIdx >= matrix.length) {
+    throw new Error('Could not locate the header row in the downloaded report.');
+  }
 
+  const headers = (matrix[headerIdx] || []).map((h) => String(h ?? '').trim());
   const rows = [];
-  for (const rawLine of allLines.slice(CSV_DATA_START - 1)) {
-    const line = rawLine.trim();
-    if (!line) continue;
-    const values = parseCsvLine(line);
-    if (values.length >= headers.length) {
-      const row = {};
-      headers.forEach((h, i) => {
-        row[h] = values[i];
-      });
-      rows.push(row);
-    }
+  for (const cells of matrix.slice(headerIdx + 1)) {
+    if (!cells || cells.every((c) => String(c ?? '').trim() === '')) continue;
+    const row = {};
+    headers.forEach((h, i) => {
+      if (h) row[h] = cells[i] === undefined || cells[i] === null ? '' : String(cells[i]);
+    });
+    rows.push(row);
   }
   return rows;
+}
+
+function parseCsvFile(filePath) {
+  const matrix = fs.readFileSync(filePath, 'utf8')
+    .split(/\r?\n/)
+    .map((line) => parseCsvLine(line));
+  return rowsFromMatrix(matrix);
+}
+
+async function parseXlsxFile(filePath) {
+  // Required lazily so a CSV-only run never pays to load exceljs.
+  const ExcelJS = require('exceljs');
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.readFile(filePath);
+  const sheet = workbook.worksheets[0];
+  if (!sheet) throw new Error('The downloaded workbook has no sheets.');
+
+  const matrix = [];
+  sheet.eachRow({ includeEmpty: true }, (row) => {
+    const cells = [];
+    // row.values is 1-based with a leading hole, hence the slice.
+    const values = Array.isArray(row.values) ? row.values.slice(1) : [];
+    for (const v of values) {
+      if (v === null || v === undefined) cells.push('');
+      else if (v instanceof Date) cells.push(v.toISOString());
+      else if (typeof v === 'object') cells.push(String(v.text ?? v.result ?? v.hyperlink ?? ''));
+      else cells.push(String(v));
+    }
+    matrix.push(cells);
+  });
+  return rowsFromMatrix(matrix);
+}
+
+// Flipkart's wallet export has arrived as CSV historically, but the UI calls
+// it a report download and the extension isn't guaranteed — so sniff the
+// actual bytes rather than trusting the filename. An .xlsx is a ZIP
+// container ("PK\x03\x04"); anything else is treated as delimited text.
+// Parsing a real workbook with the CSV reader would silently yield garbage
+// rows, which is the worst outcome here: corrupt data that still looks
+// plausible once it lands in the sheet.
+async function parseReport(filePath) {
+  const fd = fs.openSync(filePath, 'r');
+  const magic = Buffer.alloc(4);
+  try {
+    fs.readSync(fd, magic, 0, 4, 0);
+  } finally {
+    fs.closeSync(fd);
+  }
+  const isZip = magic[0] === 0x50 && magic[1] === 0x4b && magic[2] === 0x03 && magic[3] === 0x04;
+  return isZip ? parseXlsxFile(filePath) : parseCsvFile(filePath);
 }
 
 // Sheet names with spaces or other special characters (like "1.DATA Ads")
@@ -215,7 +270,7 @@ async function pushToSheet(csvPath, targetDate, send) {
     return 0;
   }
 
-  const csvRows = parseCsv(csvPath);
+  const csvRows = await parseReport(csvPath);
   if (csvRows.length === 0) {
     warn(send, step, 'CSV has no data rows');
     return 0;

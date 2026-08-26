@@ -431,10 +431,23 @@ async function downloadWalletReport(page, send, targetDate) {
 
   log(send, `${step}.click`, 'Clicking download icon');
 
-  const [download] = await Promise.all([
-    page.waitForEvent('download', { timeout: settings.DOWNLOAD_TIMEOUT_MS }),
-    downloadIcon.click(),
-  ]);
+  // Clicking only *starts* server-side report generation — the page shows
+  // "Your download is in progress. Please stay on the page." and the file
+  // arrives when it's ready, so this waits for generation plus transfer.
+  const downloadPromise = page.waitForEvent('download', { timeout: settings.DOWNLOAD_TIMEOUT_MS });
+  await downloadIcon.click();
+  log(send, step, `Report generation started — waiting up to ${Math.round(settings.DOWNLOAD_TIMEOUT_MS / 1000)}s for the file`);
+
+  let download;
+  try {
+    download = await downloadPromise;
+  } catch (err) {
+    await screenshotOnError(page, step, send);
+    throw new Error(
+      `[${step}] No file arrived within ${Math.round(settings.DOWNLOAD_TIMEOUT_MS / 1000)}s of clicking download. ` +
+      `Either the report was still generating or the click didn't land. (${err.message})`
+    );
+  }
 
   const suggested = download.suggestedFilename();
   const originalExt = path.extname(suggested) || '.csv';
