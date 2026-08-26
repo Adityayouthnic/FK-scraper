@@ -1,3 +1,4 @@
+const os = require('os');
 const path = require('path');
 
 function int(name, fallback) {
@@ -44,7 +45,9 @@ const settings = {
   TYPING_DELAY_MIN_MS: int('TYPING_DELAY_MIN_MS', 60),
   TYPING_DELAY_MAX_MS: int('TYPING_DELAY_MAX_MS', 160),
 
-  DOWNLOAD_DIR: process.env.DOWNLOAD_DIR || path.join('/tmp', 'fk-scraper-downloads'),
+  // os.tmpdir() is /tmp on Cloud Run but the user's temp folder on Windows —
+  // a literal '/tmp' resolves to C:\tmp there, writing to the drive root.
+  DOWNLOAD_DIR: process.env.DOWNLOAD_DIR || path.join(os.tmpdir(), 'fk-scraper-downloads'),
 };
 
 module.exports = { settings };

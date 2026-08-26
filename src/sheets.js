@@ -122,6 +122,33 @@ async function parseReport(filePath) {
   return isZip ? parseXlsxFile(filePath) : parseCsvFile(filePath);
 }
 
+/**
+ * Turns Google's bare "The caller does not have permission" into something
+ * actionable. Reading a sheet only needs Viewer, writing needs Editor — so
+ * a run that lists existing dates fine and then fails on the write is
+ * almost always a sharing-role problem, not a broken key.
+ */
+function enrichPermissionError(err, action) {
+  const message = String((err && err.message) || err);
+  if (!/permission|forbidden|403/i.test(message)) return err;
+
+  let email = null;
+  try {
+    email = loadServiceAccountCredentials().client_email;
+  } catch {
+    // Fall through: the key already loaded once to get this far, but don't
+    // let a secondary failure mask the real error.
+  }
+
+  const who = email ? `the service account (${email})` : 'the service account';
+  return new Error(
+    `Google Sheets refused to ${action}: ${message}\n` +
+    `  Reading the sheet worked, so ${who} has access — but only as Viewer.\n` +
+    `  Fix: open the spreadsheet -> Share -> add ${email || "the service account's client_email"} ` +
+    `-> set the role to Editor -> Save. Then re-run.`
+  );
+}
+
 // Sheet names with spaces or other special characters (like "1.DATA Ads")
 // must be single-quoted in A1-notation ranges, or the Sheets API rejects
 // the range/misparses it. Always quoting is safe even for simple names.
@@ -326,27 +353,35 @@ async function pushToSheet(csvPath, targetDate, send) {
   const endRow = startRow + batch.length - 1;
   if (endRow > ws.rowCount) {
     const extra = endRow - ws.rowCount + 50;
-    await ws.sheets.spreadsheets.batchUpdate({
-      spreadsheetId: ws.spreadsheetId,
-      requestBody: {
-        requests: [{
-          updateSheetProperties: {
-            properties: { sheetId: ws.sheetId, gridProperties: { rowCount: ws.rowCount + extra } },
-            fields: 'gridProperties.rowCount',
-          },
-        }],
-      },
-    });
+    try {
+      await ws.sheets.spreadsheets.batchUpdate({
+        spreadsheetId: ws.spreadsheetId,
+        requestBody: {
+          requests: [{
+            updateSheetProperties: {
+              properties: { sheetId: ws.sheetId, gridProperties: { rowCount: ws.rowCount + extra } },
+              fields: 'gridProperties.rowCount',
+            },
+          }],
+        },
+      });
+    } catch (err) {
+      throw enrichPermissionError(err, 'add rows to the sheet');
+    }
     log(send, step, `Expanded sheet by ${extra} rows`);
   }
 
   const cellRange = `${quoteSheetName(ws.sheetName)}!A${startRow}:L${endRow}`;
-  await ws.sheets.spreadsheets.values.update({
-    spreadsheetId: ws.spreadsheetId,
-    range: cellRange,
-    valueInputOption: 'USER_ENTERED',
-    requestBody: { values: batch },
-  });
+  try {
+    await ws.sheets.spreadsheets.values.update({
+      spreadsheetId: ws.spreadsheetId,
+      range: cellRange,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: { values: batch },
+    });
+  } catch (err) {
+    throw enrichPermissionError(err, `write rows to ${cellRange}`);
+  }
   log(send, step, `Pushed ${batch.length} rows to ${cellRange}`);
 
   await applyFormatting(ws, startRow, endRow, send);
