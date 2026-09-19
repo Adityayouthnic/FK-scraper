@@ -107,13 +107,17 @@ async function runScrapeJob(send) {
     client = await awaitCancellable(run, context.newCDPSession(page));
     await awaitCancellable(run, client.send('Page.startScreencast', {
       format: 'jpeg',
-      quality: 60,
+      quality: 85,
       maxWidth: VIEWPORT.width,
       maxHeight: VIEWPORT.height,
       everyNthFrame: 1,
     }));
-    client.on('Page.screencastFrame', async ({ data, sessionId }) => {
-      send('frame', { data });
+    client.on('Page.screencastFrame', async ({ data, sessionId, metadata }) => {
+      send('frame', {
+        data,
+        viewportWidth: metadata?.deviceWidth || VIEWPORT.width,
+        viewportHeight: metadata?.deviceHeight || VIEWPORT.height,
+      });
       try {
         await client.send('Page.screencastFrameAck', { sessionId });
       } catch {

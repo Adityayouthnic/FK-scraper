@@ -16,6 +16,7 @@ const VIEWPORT_HEIGHT = 768;
 
 let isRunning = false;
 let lastMoveSent = 0;
+let remoteViewport = { width: VIEWPORT_WIDTH, height: VIEWPORT_HEIGHT };
 
 const proto = location.protocol === 'https:' ? 'wss' : 'ws';
 const ws = new WebSocket(`${proto}://${location.host}/ws`);
@@ -69,6 +70,10 @@ ws.addEventListener('message', (event) => {
       appendLog(msg.message, classifyLog(msg.message));
       break;
     case 'frame':
+      remoteViewport = {
+        width: Number(msg.viewportWidth) || VIEWPORT_WIDTH,
+        height: Number(msg.viewportHeight) || VIEWPORT_HEIGHT,
+      };
       viewPlaceholder.style.display = 'none';
       liveView.style.display = 'block';
       liveView.src = `data:image/jpeg;base64,${msg.data}`;
@@ -120,9 +125,26 @@ function sendInput(payload) {
 
 function toViewportCoords(e) {
   const rect = liveView.getBoundingClientRect();
+  const scale = Math.min(
+    rect.width / remoteViewport.width,
+    rect.height / remoteViewport.height,
+  );
+  if (!Number.isFinite(scale) || scale <= 0) return null;
+
+  // The image uses object-fit: contain, so a responsive panel can add
+  // letterboxing on either axis. Remove that padding before mapping the
+  // pointer back to the Playwright viewport.
+  const contentWidth = remoteViewport.width * scale;
+  const contentHeight = remoteViewport.height * scale;
+  const offsetX = (rect.width - contentWidth) / 2;
+  const offsetY = (rect.height - contentHeight) / 2;
+  const x = e.clientX - rect.left - offsetX;
+  const y = e.clientY - rect.top - offsetY;
+  if (x < 0 || y < 0 || x > contentWidth || y > contentHeight) return null;
+
   return {
-    x: Math.round(((e.clientX - rect.left) / rect.width) * VIEWPORT_WIDTH),
-    y: Math.round(((e.clientY - rect.top) / rect.height) * VIEWPORT_HEIGHT),
+    x: Math.max(0, Math.min(remoteViewport.width - 1, Math.round(x / scale))),
+    y: Math.max(0, Math.min(remoteViewport.height - 1, Math.round(y / scale))),
   };
 }
 
@@ -136,19 +158,22 @@ liveView.addEventListener('contextmenu', (e) => e.preventDefault());
 
 liveView.addEventListener('mousedown', (e) => {
   e.preventDefault();
-  sendInput({ event: 'mousedown', ...toViewportCoords(e), button: buttonName(e) });
+  const point = toViewportCoords(e);
+  if (point) sendInput({ event: 'mousedown', ...point, button: buttonName(e) });
 });
 
 liveView.addEventListener('mouseup', (e) => {
   e.preventDefault();
-  sendInput({ event: 'mouseup', ...toViewportCoords(e), button: buttonName(e) });
+  const point = toViewportCoords(e);
+  if (point) sendInput({ event: 'mouseup', ...point, button: buttonName(e) });
 });
 
 liveView.addEventListener('mousemove', (e) => {
   const now = Date.now();
   if (now - lastMoveSent < 25) return;
   lastMoveSent = now;
-  sendInput({ event: 'mousemove', ...toViewportCoords(e) });
+  const point = toViewportCoords(e);
+  if (point) sendInput({ event: 'mousemove', ...point });
 });
 
 liveView.addEventListener('wheel', (e) => {
