@@ -13,6 +13,35 @@ const VIEWPORT = { width: settings.VIEWPORT_WIDTH, height: settings.VIEWPORT_HEI
 // events (mouse/keyboard from the live view) can be relayed to it. There is
 // at most one active run at a time (enforced in server.js).
 let activePage = null;
+let activeRun = null;
+
+class RunCancelledError extends Error {
+  constructor() {
+    super('Run cancelled by user.');
+    this.code = 'RUN_CANCELLED';
+  }
+}
+
+function cancelActiveRun() {
+  if (!activeRun) return false;
+
+  activeRun.cancelled = true;
+  activeRun.rejectCancel(new RunCancelledError());
+  if (activeRun.browser) {
+    activeRun.browser.close().catch(() => {});
+  }
+  return true;
+}
+
+function awaitCancellable(run, operation, onLateResolve) {
+  const pending = Promise.resolve(operation);
+  pending.then((value) => {
+    // If cancellation won while a setup operation was still starting, clean
+    // up anything that finished after the run had already been released.
+    if (run.cancelled && onLateResolve) onLateResolve(value);
+  }, () => {});
+  return Promise.race([pending, run.cancelPromise]);
+}
 
 async function dispatchInput(evt) {
   if (!activePage) return;
@@ -46,47 +75,71 @@ async function dispatchInput(evt) {
 }
 
 async function runScrapeJob(send) {
-  const savedSession = await loadSession(send);
-  const { browser, context } = await launchBrowser(send, { storageState: savedSession, useStealth: true });
-  const page = await context.newPage();
-  activePage = page;
-
-  const client = await context.newCDPSession(page);
-  await client.send('Page.startScreencast', {
-    format: 'jpeg',
-    quality: 60,
-    maxWidth: VIEWPORT.width,
-    maxHeight: VIEWPORT.height,
-    everyNthFrame: 1,
+  const run = {
+    browser: null,
+    cancelled: false,
+    rejectCancel: null,
+    resolveCancel: null,
+  };
+  run.cancelPromise = new Promise((resolve, reject) => {
+    run.resolveCancel = resolve;
+    run.rejectCancel = reject;
   });
-  client.on('Page.screencastFrame', async ({ data, sessionId }) => {
-    send('frame', { data });
-    try {
-      await client.send('Page.screencastFrameAck', { sessionId });
-    } catch {
-      // WS/browser may already be closing; safe to ignore.
-    }
-  });
+  activeRun = run;
 
+  let browser = null;
+  let context = null;
+  let page = null;
+  let client = null;
   try {
+    const savedSession = await awaitCancellable(run, loadSession(send));
+    const launched = await awaitCancellable(
+      run,
+      launchBrowser(send, { storageState: savedSession, useStealth: true }),
+      (lateBrowser) => lateBrowser?.browser?.close().catch(() => {})
+    );
+    ({ browser, context } = launched);
+    run.browser = browser;
+
+    page = await awaitCancellable(run, context.newPage(), (latePage) => latePage?.close().catch(() => {}));
+    activePage = page;
+
+    client = await awaitCancellable(run, context.newCDPSession(page));
+    await awaitCancellable(run, client.send('Page.startScreencast', {
+      format: 'jpeg',
+      quality: 60,
+      maxWidth: VIEWPORT.width,
+      maxHeight: VIEWPORT.height,
+      everyNthFrame: 1,
+    }));
+    client.on('Page.screencastFrame', async ({ data, sessionId }) => {
+      send('frame', { data });
+      try {
+        await client.send('Page.screencastFrameAck', { sessionId });
+      } catch {
+        // WS/browser may already be closing; safe to ignore.
+      }
+    });
+
     let loggedIn = false;
 
     if (savedSession) {
       try {
-        await navigateToWallet(page, send);
+        await awaitCancellable(run, navigateToWallet(page, send));
         loggedIn = true;
       } catch (navErr) {
+        if (run.cancelled) throw navErr;
         warn(send, 'session', `Saved session didn't work (${navErr.message}) — logging in fresh.`);
       }
     }
 
     if (!loggedIn) {
-      await login(page, send);
-      await saveSession(context, send);
-      await navigateToWallet(page, send);
+      await awaitCancellable(run, login(page, send));
+      await awaitCancellable(run, saveSession(context, send));
+      await awaitCancellable(run, navigateToWallet(page, send));
     }
 
-    const presentDates = await getPresentDates(send);
+    const presentDates = await awaitCancellable(run, getPresentDates(send));
     const missing = missingDatesInWindow(presentDates, settings.LOOKBACK_DAYS);
 
     if (missing.length === 0) {
@@ -105,11 +158,12 @@ async function runScrapeJob(send) {
       try {
         log(send, 'run', `--- Processing ${label} ---`);
         const isYesterday = dateKey(targetDate) === yesterdayKey;
-        await selectDate(page, send, targetDate, isYesterday);
-        const csvPath = await downloadWalletReport(page, send, targetDate);
-        const rows = await pushToSheet(csvPath, targetDate, send);
+        await awaitCancellable(run, selectDate(page, send, targetDate, isYesterday));
+        const csvPath = await awaitCancellable(run, downloadWalletReport(page, send, targetDate));
+        const rows = await awaitCancellable(run, pushToSheet(csvPath, targetDate, send));
         totalRows += rows;
       } catch (err) {
+        if (run.cancelled) throw err;
         failures += 1;
         warn(send, 'run', `Failed processing ${label}: ${err.message}`);
       }
@@ -119,13 +173,20 @@ async function runScrapeJob(send) {
       `Done: ${missing.length - failures}/${missing.length} date(s) processed successfully, ${totalRows} row(s) added.`);
 
     return { rowsAdded: totalRows, datesProcessed: missing.length, failures };
+  } catch (err) {
+    if (run.cancelled || err.code === 'RUN_CANCELLED') throw new RunCancelledError();
+    throw err;
   } finally {
     try {
-      await client.send('Page.stopScreencast');
+      if (client) await client.send('Page.stopScreencast');
     } catch {}
-    activePage = null;
-    await browser.close();
+    if (activePage === page) activePage = null;
+    try {
+      if (browser) await browser.close();
+    } catch {}
+    run.resolveCancel();
+    if (activeRun === run) activeRun = null;
   }
 }
 
-module.exports = { runScrapeJob, dispatchInput };
+module.exports = { runScrapeJob, dispatchInput, cancelActiveRun };
