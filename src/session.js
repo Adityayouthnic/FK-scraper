@@ -20,7 +20,11 @@ function getStorageClient() {
 
 async function loadSession(send) {
   if (!settings.SESSION_BUCKET) {
-    log(send, 'session.load', 'No SESSION_BUCKET configured — skipping saved session, will log in fresh.');
+    warn(
+      send,
+      'session.load',
+      'No SESSION_BUCKET configured — a fresh login/CAPTCHA will be required on every run.'
+    );
     return null;
   }
   try {
