@@ -17,7 +17,38 @@ const { dateKey, formatDMonY, parseDateLoose, addDays, todayIST, compareDate } =
 // so a change in how many preamble lines they emit can't silently shift every
 // column by a row.
 const FALLBACK_HEADER_ROW = 7;
-const HEADER_MARKER = 'transaction id';
+
+// Flipkart has changed the spelling/capitalization/separators in the report
+// headers over time (for example, `Transaction Id` -> `Transaction ID` and
+// `gross_amount` -> `Gross Amount`). Keep the report mapping semantic instead
+// of depending on one exact display spelling.
+function normaliseHeader(value) {
+  return String(value ?? '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+const REPORT_HEADER_ALIASES = {
+  transactionid: 'transactionId',
+  grossamount: 'grossAmount',
+  campaignid: 'campaignId',
+  campaign: 'campaign',
+  operation: 'operation',
+  operationsubtype: 'operationSubType',
+  status: 'status',
+};
+
+function canonicalReportHeader(value) {
+  return REPORT_HEADER_ALIASES[normaliseHeader(value)] || null;
+}
+
+const REQUIRED_REPORT_FIELDS = [
+  'transactionId',
+  'grossAmount',
+  'campaignId',
+  'campaign',
+  'operation',
+  'operationSubType',
+  'status',
+];
 
 function parseCsvLine(line) {
   const fields = [];
@@ -53,7 +84,7 @@ function parseCsvLine(line) {
 // header row, wherever that row happens to be.
 function rowsFromMatrix(matrix) {
   let headerIdx = matrix.findIndex((cells) =>
-    cells.some((c) => String(c ?? '').trim().toLowerCase() === HEADER_MARKER));
+    cells.some((c) => canonicalReportHeader(c) === 'transactionId'));
   if (headerIdx === -1) headerIdx = FALLBACK_HEADER_ROW - 1;
   if (headerIdx < 0 || headerIdx >= matrix.length) {
     throw new Error('Could not locate the header row in the downloaded report.');
@@ -65,7 +96,9 @@ function rowsFromMatrix(matrix) {
     if (!cells || cells.every((c) => String(c ?? '').trim() === '')) continue;
     const row = {};
     headers.forEach((h, i) => {
-      if (h) row[h] = cells[i] === undefined || cells[i] === null ? '' : String(cells[i]);
+      if (!h) return;
+      const key = canonicalReportHeader(h) || h;
+      row[key] = cells[i] === undefined || cells[i] === null ? '' : String(cells[i]);
     });
     rows.push(row);
   }
@@ -304,6 +337,15 @@ async function pushToSheet(csvPath, targetDate, send) {
   }
   log(send, step, `Parsed ${csvRows.length} rows from CSV`);
 
+  const missingFields = REQUIRED_REPORT_FIELDS.filter((field) =>
+    !csvRows.some((row) => Object.prototype.hasOwnProperty.call(row, field)));
+  if (missingFields.length > 0) {
+    throw new Error(
+      `Downloaded report is missing required columns: ${missingFields.join(', ')}. ` +
+      'No rows were written to Google Sheets.'
+    );
+  }
+
   const cValues = await colValues(ws, 'C');
   const startRow = Math.max(cValues.length + 1, 2);
   log(send, step, `Appending starting at row ${startRow}`);
@@ -329,7 +371,7 @@ async function pushToSheet(csvPath, targetDate, send) {
     // become 1. Leaving such a value as a string is correct: USER_ENTERED
     // makes Sheets parse "1,234.50" as 1234.5 itself, which is exactly what
     // the Python did.
-    let gross = row['gross_amount'] || '';
+    let gross = row.grossAmount || '';
     const grossText = String(gross).trim();
     const grossNum = Number(grossText);
     if (grossText !== '' && Number.isFinite(grossNum)) gross = grossNum;
@@ -337,13 +379,13 @@ async function pushToSheet(csvPath, targetDate, send) {
     return [
       aVal,
       bVal,
-      row['Transaction Id'] || '',
+      row.transactionId || '',
       gross,
-      row['campaign_id'] || '',
-      row['Campaign'] || '',
-      row['Operation'] || '',
-      row['Operation Sub Type'] || '',
-      row['status'] || '',
+      row.campaignId || '',
+      row.campaign || '',
+      row.operation || '',
+      row.operationSubType || '',
+      row.status || '',
       dateStr,
       kVal,
       '',
