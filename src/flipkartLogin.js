@@ -3,15 +3,12 @@
  * (LoginSelectors) + utils.py (safeClick/safeFill with human-like pacing),
  * replacing the earlier simpler version.
  *
- * Auto-fills and attempts to auto-submit the login form. If Flipkart shows
- * a CAPTCHA (common on a fresh, cookie-less session), the auto-submit click
- * either no-ops or gets blocked by it — either way, waitForLogin below just
- * keeps polling for success, and a human can finish it live from the
- * streamed browser view. Once a saved session exists (see session.js),
- * this path is only needed when that session has expired.
+ * Fills the login form, but leaves CAPTCHA completion and the final submit to
+ * the human whenever a CAPTCHA widget is present. Once a saved session exists
+ * (see session.js), this path is only needed when that session has expired.
  */
 const { LoginSelectors } = require('./selectors');
-const { safeClick, safeFill, log, warn } = require('./utils');
+const { locatorFor, safeClick, safeFill, log, warn } = require('./utils');
 
 const LOGIN_URL = 'https://seller.flipkart.com/';
 const LOGIN_TIMEOUT_MS = 600000;
@@ -30,6 +27,28 @@ function loadCredentials() {
   return { email, password };
 }
 
+async function captchaIsVisible(page) {
+  const captchaSelectors = [
+    'iframe[src*="recaptcha"]',
+    'iframe[title*="reCAPTCHA"]',
+    'iframe[title*="recaptcha"]',
+    '[id*="recaptcha"]',
+    '[class*="recaptcha"]',
+    '[id*="captcha"]',
+    '[class*="captcha"]',
+  ];
+
+  for (const selector of captchaSelectors) {
+    try {
+      if (await locatorFor(page, selector).first().isVisible()) return true;
+    } catch {
+      // The login page can be changing while the widget is inserted.
+    }
+  }
+
+  return page.frames().some((frame) => /(?:re)?captcha/i.test(frame.url()));
+}
+
 async function fillLoginForm(page, email, password, send) {
   const step = 'login.form';
 
@@ -43,16 +62,30 @@ async function fillLoginForm(page, email, password, send) {
     password, step, send, undefined, true
   );
 
+  if (await captchaIsVisible(page)) {
+    log(
+      send,
+      step,
+      'CAPTCHA detected. Automatic submission is paused; solve it and click Login in the live view.'
+    );
+    return true;
+  }
+
   try {
     await safeClick(page, LoginSelectors.PASSWORD_SUBMIT_FALLBACK, null, step, send, 8000);
   } catch (err) {
     warn(send, step, `Auto-submit button not found (${err.message}) — waiting for manual login in the live view.`);
   }
+  return false;
 }
 
-async function waitForLogin(page, send) {
+async function waitForLogin(page, send, captchaDetected) {
   const step = 'login.wait';
-  log(send, step, 'Solve the captcha if one appears, then click Login in the live view below.');
+  if (captchaDetected) {
+    log(send, step, 'Waiting for manual CAPTCHA completion and Login click in the live view.');
+  } else {
+    log(send, step, 'Waiting for login to complete in the live view if Flipkart requests any extra verification.');
+  }
   log(send, step, `Waiting up to ${LOGIN_TIMEOUT_MS / 60000} minutes for login to complete...`);
 
   const startUrl = page.url();
@@ -86,8 +119,8 @@ async function waitForLogin(page, send) {
 async function login(page, send) {
   const { email, password } = loadCredentials();
   log(send, 'login', 'Filling Flipkart seller login form...');
-  await fillLoginForm(page, email, password, send);
-  await waitForLogin(page, send);
+  const captchaDetected = await fillLoginForm(page, email, password, send);
+  await waitForLogin(page, send, captchaDetected);
 }
 
 module.exports = { login, LOGIN_URL };
