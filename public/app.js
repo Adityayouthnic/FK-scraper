@@ -8,6 +8,7 @@ const log = document.getElementById('log');
 const statStatus = document.getElementById('stat-status');
 const statLastRun = document.getElementById('stat-last-run');
 const statLastResult = document.getElementById('stat-last-result');
+const runBtnLabel = runBtn.querySelector('span');
 
 // Must match VIEWPORT in src/scraper.js.
 const VIEWPORT_WIDTH = 1024;
@@ -48,7 +49,9 @@ function setStatus(state) {
   const label = STATUS_LABELS[state] || state;
   statusText.textContent = label;
   statStatus.textContent = label;
-  runBtn.disabled = isRunning;
+  runBtn.disabled = false;
+  runBtnLabel.textContent = isRunning ? 'Stop Scraper' : 'Run Scraper';
+  runBtn.classList.toggle('run-btn-stop', isRunning);
   liveBadge.classList.toggle('active', isRunning);
   if (!isRunning) {
     liveView.style.display = 'none';
@@ -78,6 +81,11 @@ ws.addEventListener('message', (event) => {
       statLastRun.textContent = new Date().toLocaleTimeString();
       statLastResult.textContent = 'Success';
       break;
+    case 'cancelled':
+      appendLog(msg.message || 'Run cancelled.', 'info');
+      statLastRun.textContent = new Date().toLocaleTimeString();
+      statLastResult.textContent = 'Cancelled';
+      break;
     case 'error':
       appendLog(`Error: ${msg.message}`, 'error');
       statLastRun.textContent = new Date().toLocaleTimeString();
@@ -92,8 +100,13 @@ ws.addEventListener('message', (event) => {
 });
 
 runBtn.addEventListener('click', () => {
-  log.textContent = '';
   const token = localStorage.getItem('fk_scraper_token') || '';
+  if (isRunning) {
+    ws.send(JSON.stringify({ type: 'cancel', token }));
+    appendLog('Cancellation requested.', 'info');
+    return;
+  }
+  log.textContent = '';
   ws.send(JSON.stringify({ type: 'run', token }));
 });
 
