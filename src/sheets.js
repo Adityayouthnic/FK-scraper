@@ -33,12 +33,43 @@ const REPORT_HEADER_ALIASES = {
   transaction: 'transactionId',
   transactiondetails: 'transactionId',
 
-  // Gross Amount
+  // Gross Amount / Monetary amount
   grossamount: 'grossAmount',
   grossamt: 'grossAmount',
+  gross: 'grossAmount',
   amount: 'grossAmount',
   totalamount: 'grossAmount',
   netamount: 'grossAmount',
+  grossamountinr: 'grossAmount',
+  grossamountrs: 'grossAmount',
+  amountinr: 'grossAmount',
+  amountrs: 'grossAmount',
+  debit: 'grossAmount',
+  debitamount: 'grossAmount',
+  debitedamount: 'grossAmount',
+  debitinr: 'grossAmount',
+  spend: 'grossAmount',
+  adspend: 'grossAmount',
+  totalspend: 'grossAmount',
+  spendinr: 'grossAmount',
+  deduction: 'grossAmount',
+  deductions: 'grossAmount',
+  totaldeductions: 'grossAmount',
+  charges: 'grossAmount',
+  totalcharges: 'grossAmount',
+  cost: 'grossAmount',
+  value: 'grossAmount',
+  transactionamount: 'grossAmount',
+  txnamount: 'grossAmount',
+  transamount: 'grossAmount',
+  walletamount: 'grossAmount',
+  orderamount: 'grossAmount',
+  fee: 'grossAmount',
+  fees: 'grossAmount',
+  billedamount: 'grossAmount',
+  billamount: 'grossAmount',
+  credit: 'grossAmount',
+  creditedamount: 'grossAmount',
 
   // Campaign Id
   campaignid: 'campaignId',
@@ -77,7 +108,71 @@ function canonicalReportHeader(value) {
   return REPORT_HEADER_ALIASES[normaliseHeader(value)] || null;
 }
 
+const AMOUNT_REGEX = /^\s*(?:₹|rs\.?|inr)?\s*([+-]?[\d,]+(?:\.\d+)?)\s*(?:inr)?\s*$/i;
+
+function isValidAmount(v) {
+  if (v === undefined || v === null || v === '') return false;
+  if (typeof v === 'number') return Number.isFinite(v);
+  const str = String(v).trim();
+  if (!str) return false;
+  return AMOUNT_REGEX.test(str);
+}
+
+function parseAmountValue(v) {
+  if (typeof v === 'number') return v;
+  const str = String(v ?? '').trim();
+  const m = str.match(AMOUNT_REGEX);
+  if (m) {
+    const clean = m[1].replace(/,/g, '');
+    const num = Number(clean);
+    if (Number.isFinite(num)) return num;
+  }
+  return str;
+}
+
+function extractGrossAmount(row) {
+  if (!row) return '';
+
+  // 1. Direct canonical or alias lookup
+  let val = getFieldValue(row, 'grossAmount');
+  if (isValidAmount(val)) return parseAmountValue(val);
+
+  // 2. Search all keys in row for any amount-related substring
+  for (const [k, v] of Object.entries(row)) {
+    if (!k || k.startsWith('_')) continue;
+    const norm = normaliseHeader(k);
+    if (/gross|amount|debit|spend|deduct|cost|charge|amt|fee|bill/i.test(norm)) {
+      if (isValidAmount(v)) return parseAmountValue(v);
+    }
+  }
+
+  // 3. Positional fallback: in Flipkart wallet reports, column index 1 is gross_amount
+  const raw = row._rawCells || row._byIndex;
+  if (Array.isArray(raw) && raw.length > 1) {
+    if (isValidAmount(raw[1])) {
+      return parseAmountValue(raw[1]);
+    }
+  }
+
+  // 4. Value scan fallback: find any numeric cell not mapped to transactionId, campaignId, or operation
+  if (Array.isArray(raw)) {
+    for (let i = 0; i < raw.length; i++) {
+      const c = raw[i];
+      if (isValidAmount(c)) {
+        const header = row._headers && row._headers[i];
+        const canon = header ? canonicalReportHeader(header) : null;
+        if (canon !== 'transactionId' && canon !== 'campaignId' && canon !== 'operation') {
+          return parseAmountValue(c);
+        }
+      }
+    }
+  }
+
+  return '';
+}
+
 function getFieldValue(row, canonicalField) {
+  if (!row) return '';
   if (row[canonicalField] !== undefined && row[canonicalField] !== null && row[canonicalField] !== '') {
     return row[canonicalField];
   }
@@ -87,6 +182,7 @@ function getFieldValue(row, canonicalField) {
     }
   }
   for (const key of Object.keys(row)) {
+    if (key.startsWith('_')) continue;
     if (canonicalReportHeader(key) === canonicalField && row[key] !== undefined && row[key] !== null) {
       return row[key];
     }
@@ -156,13 +252,16 @@ function rowsFromMatrix(matrix) {
   const rows = [];
   for (const cells of matrix.slice(headerIdx + 1)) {
     if (!cells || cells.every((c) => String(c ?? '').trim() === '')) continue;
-    const row = {};
+    const row = {
+      _rawCells: cells,
+      _headers: headers,
+    };
     headers.forEach((h, i) => {
-      if (!h) return;
-      const key = canonicalReportHeader(h) || h;
       const val = cells[i] === undefined || cells[i] === null ? '' : String(cells[i]).trim();
+      const colKey = h || `col_${i}`;
+      const key = canonicalReportHeader(colKey) || colKey;
       row[key] = val;
-      const norm = normaliseHeader(h);
+      const norm = normaliseHeader(colKey);
       if (norm && norm !== key) row[norm] = val;
     });
     rows.push(row);
@@ -429,7 +528,7 @@ async function pushToSheet(csvPath, targetDate, send) {
 
   // Ensure there is recognizable transaction data
   const hasRecognizableData = csvRows.some((row) =>
-    getFieldValue(row, 'transactionId') || getFieldValue(row, 'grossAmount')
+    getFieldValue(row, 'transactionId') || extractGrossAmount(row)
   );
   if (!hasRecognizableData) {
     warn(send, step, 'Report contains no recognizable transaction rows — skipping push');
@@ -457,24 +556,12 @@ async function pushToSheet(csvPath, targetDate, send) {
       `D${sheetRow}*-1,D${sheetRow})`;
 
     const transId = getFieldValue(row, 'transactionId');
-    let gross = getFieldValue(row, 'grossAmount');
+    const finalGross = extractGrossAmount(row);
     const campaignId = getFieldValue(row, 'campaignId');
     const campaign = getFieldValue(row, 'campaign');
     const operation = getFieldValue(row, 'operation');
     const opSubType = getFieldValue(row, 'operationSubType');
     const status = getFieldValue(row, 'status');
-
-    let grossNum = NaN;
-    if (typeof gross === 'number') {
-      grossNum = gross;
-    } else if (typeof gross === 'string') {
-      const cleanGross = gross.replace(/[^0-9.-]/g, '');
-      if (cleanGross !== '') {
-        const parsed = Number(cleanGross);
-        if (Number.isFinite(parsed)) grossNum = parsed;
-      }
-    }
-    const finalGross = Number.isFinite(grossNum) ? grossNum : (gross || '');
 
     return [
       aVal,
@@ -542,4 +629,7 @@ module.exports = {
   normaliseHeader,
   canonicalReportHeader,
   REPORT_HEADER_ALIASES,
+  extractGrossAmount,
+  isValidAmount,
+  parseAmountValue,
 };
