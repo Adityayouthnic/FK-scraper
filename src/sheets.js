@@ -1,5 +1,5 @@
 /**
- * Google Sheets integration: parse the downloaded wallet CSV, check for
+ * Google Sheets integration: parse the downloaded wallet CSV/XLSX, check for
  * duplicate dates, push data with formulas, and format the new rows to
  * match existing ones. Ported from sheets.py, switched from interactive
  * OAuth (can't run unattended on a server) to a service account.
@@ -13,9 +13,7 @@ const { dateKey, formatDMonY, parseDateLoose, addDays, todayIST, compareDate } =
 
 // Flipkart's export carries 6 metadata lines before the real header, so the
 // header has historically been row 7. That's only a fallback now: the header
-// is located by looking for the row that actually contains "Transaction Id",
-// so a change in how many preamble lines they emit can't silently shift every
-// column by a row.
+// is located dynamically by scanning for matching report headers.
 const FALLBACK_HEADER_ROW = 7;
 
 // Flipkart has changed the spelling/capitalization/separators in the report
@@ -27,28 +25,74 @@ function normaliseHeader(value) {
 }
 
 const REPORT_HEADER_ALIASES = {
+  // Transaction Id
   transactionid: 'transactionId',
+  transid: 'transactionId',
+  txnid: 'transactionId',
+  txid: 'transactionId',
+  transaction: 'transactionId',
+  transactiondetails: 'transactionId',
+
+  // Gross Amount
   grossamount: 'grossAmount',
+  grossamt: 'grossAmount',
+  amount: 'grossAmount',
+  totalamount: 'grossAmount',
+  netamount: 'grossAmount',
+
+  // Campaign Id
   campaignid: 'campaignId',
+  campaign_id: 'campaignId',
+  adcampaignid: 'campaignId',
+  campaignidentifier: 'campaignId',
+
+  // Campaign Name
   campaign: 'campaign',
+  campaignname: 'campaign',
+  campaign_name: 'campaign',
+  adcampaign: 'campaign',
+  adcampaignname: 'campaign',
+  campaigntitle: 'campaign',
+
+  // Operation
   operation: 'operation',
+  operationtype: 'operation',
+  transactiontype: 'operation',
+  type: 'operation',
+
+  // Operation Sub Type
   operationsubtype: 'operationSubType',
+  operationsub_type: 'operationSubType',
+  subtype: 'operationSubType',
+  suboperation: 'operationSubType',
+  operationsubtypeid: 'operationSubType',
+
+  // Status
   status: 'status',
+  transactionstatus: 'status',
+  state: 'status',
 };
 
 function canonicalReportHeader(value) {
   return REPORT_HEADER_ALIASES[normaliseHeader(value)] || null;
 }
 
-const REQUIRED_REPORT_FIELDS = [
-  'transactionId',
-  'grossAmount',
-  'campaignId',
-  'campaign',
-  'operation',
-  'operationSubType',
-  'status',
-];
+function getFieldValue(row, canonicalField) {
+  if (row[canonicalField] !== undefined && row[canonicalField] !== null && row[canonicalField] !== '') {
+    return row[canonicalField];
+  }
+  for (const [normAlias, canon] of Object.entries(REPORT_HEADER_ALIASES)) {
+    if (canon === canonicalField && row[normAlias] !== undefined && row[normAlias] !== null && row[normAlias] !== '') {
+      return row[normAlias];
+    }
+  }
+  for (const key of Object.keys(row)) {
+    if (canonicalReportHeader(key) === canonicalField && row[key] !== undefined && row[key] !== null) {
+      return row[key];
+    }
+  }
+  return '';
+}
 
 function parseCsvLine(line) {
   const fields = [];
@@ -80,12 +124,30 @@ function parseCsvLine(line) {
   return fields;
 }
 
+function findHeaderRowIndex(matrix) {
+  let bestIdx = -1;
+  let maxMatches = 0;
+  for (let i = 0; i < Math.min(matrix.length, 25); i++) {
+    const cells = matrix[i] || [];
+    let matches = 0;
+    for (const c of cells) {
+      if (canonicalReportHeader(c)) matches++;
+    }
+    if (matches > maxMatches) {
+      maxMatches = matches;
+      bestIdx = i;
+    }
+  }
+  if (maxMatches >= 2) return bestIdx;
+  if (matrix.length >= FALLBACK_HEADER_ROW) return FALLBACK_HEADER_ROW - 1;
+  return 0;
+}
+
 // Turns a matrix of cell values into objects keyed by the report's own
 // header row, wherever that row happens to be.
 function rowsFromMatrix(matrix) {
-  let headerIdx = matrix.findIndex((cells) =>
-    cells.some((c) => canonicalReportHeader(c) === 'transactionId'));
-  if (headerIdx === -1) headerIdx = FALLBACK_HEADER_ROW - 1;
+  if (!matrix || matrix.length === 0) return [];
+  const headerIdx = findHeaderRowIndex(matrix);
   if (headerIdx < 0 || headerIdx >= matrix.length) {
     throw new Error('Could not locate the header row in the downloaded report.');
   }
@@ -98,7 +160,10 @@ function rowsFromMatrix(matrix) {
     headers.forEach((h, i) => {
       if (!h) return;
       const key = canonicalReportHeader(h) || h;
-      row[key] = cells[i] === undefined || cells[i] === null ? '' : String(cells[i]);
+      const val = cells[i] === undefined || cells[i] === null ? '' : String(cells[i]).trim();
+      row[key] = val;
+      const norm = normaliseHeader(h);
+      if (norm && norm !== key) row[norm] = val;
     });
     rows.push(row);
   }
@@ -144,6 +209,9 @@ async function parseXlsxFile(filePath) {
 // rows, which is the worst outcome here: corrupt data that still looks
 // plausible once it lands in the sheet.
 async function parseReport(filePath) {
+  if (!fs.existsSync(filePath)) {
+    throw new Error(`Report file does not exist at ${filePath}`);
+  }
   const fd = fs.openSync(filePath, 'r');
   const magic = Buffer.alloc(4);
   try {
@@ -291,6 +359,23 @@ async function applyFormatting(ws, startRow, endRow, send) {
       },
     },
     {
+      repeatCell: {
+        range: {
+          sheetId: ws.sheetId,
+          startRowIndex: startRow - 1,
+          endRowIndex: endRow,
+          startColumnIndex: 9, // Column J is index 9 (0-based)
+          endColumnIndex: 10,
+        },
+        cell: {
+          userEnteredFormat: {
+            numberFormat: { type: 'DATE', pattern: 'dd-mm-yyyy' },
+          },
+        },
+        fields: 'userEnteredFormat.numberFormat',
+      },
+    },
+    {
       updateBorders: {
         range: fullRange,
         top: borderStyle,
@@ -305,7 +390,7 @@ async function applyFormatting(ws, startRow, endRow, send) {
 
   try {
     await ws.sheets.spreadsheets.batchUpdate({ spreadsheetId: ws.spreadsheetId, requestBody: { requests } });
-    log(send, step, `Formatted rows ${startRow}-${endRow} (Calibri 11, centered, borders)`);
+    log(send, step, `Formatted rows ${startRow}-${endRow} (Calibri 11, centered, borders, dd-mm-yyyy date)`);
   } catch (fmtErr) {
     warn(send, step, `Formatting failed (data was still pushed): ${fmtErr.message}`);
   }
@@ -320,7 +405,12 @@ async function pushToSheet(csvPath, targetDate, send) {
 
   const ws = await openWorksheet(send);
 
-  const jValues = await colValues(ws, 'J');
+  const [aValues, cValues, jValues] = await Promise.all([
+    colValues(ws, 'A'),
+    colValues(ws, 'C'),
+    colValues(ws, 'J'),
+  ]);
+
   const alreadyPresent = jValues.some((v) => {
     const d = parseDateLoose(v);
     return d && dateKey(d) === dateKey(targetDate);
@@ -332,23 +422,26 @@ async function pushToSheet(csvPath, targetDate, send) {
 
   const csvRows = await parseReport(csvPath);
   if (csvRows.length === 0) {
-    warn(send, step, 'CSV has no data rows');
+    warn(send, step, 'Report has no data rows');
     return 0;
   }
-  log(send, step, `Parsed ${csvRows.length} rows from CSV`);
+  log(send, step, `Parsed ${csvRows.length} rows from report`);
 
-  const missingFields = REQUIRED_REPORT_FIELDS.filter((field) =>
-    !csvRows.some((row) => Object.prototype.hasOwnProperty.call(row, field)));
-  if (missingFields.length > 0) {
-    throw new Error(
-      `Downloaded report is missing required columns: ${missingFields.join(', ')}. ` +
-      'No rows were written to Google Sheets.'
-    );
+  // Ensure there is recognizable transaction data
+  const hasRecognizableData = csvRows.some((row) =>
+    getFieldValue(row, 'transactionId') || getFieldValue(row, 'grossAmount')
+  );
+  if (!hasRecognizableData) {
+    warn(send, step, 'Report contains no recognizable transaction rows — skipping push');
+    return 0;
   }
 
-  const cValues = await colValues(ws, 'C');
-  const startRow = Math.max(cValues.length + 1, 2);
+  const lastPopulatedRow = Math.max(aValues.length, cValues.length, jValues.length);
+  const startRow = Math.max(lastPopulatedRow + 1, 2);
   log(send, step, `Appending starting at row ${startRow}`);
+
+  // Use =DATE(y,m,d) so Google Sheets reliably evaluates the date in any spreadsheet locale
+  const dateFormula = `=DATE(${targetDate.y},${targetDate.m},${targetDate.d})`;
 
   // Columns: A=S.No, B=Month, C=TransId, D=gross_amount, E=campaign_id,
   //          F=Campaign, G=Operation, H=OpSubType, I=status, J=Date,
@@ -363,30 +456,37 @@ async function pushToSheet(csvPath, targetDate, send) {
       `=IF(OR(G${sheetRow}="Redeem",G${sheetRow}="EXPIRE_AUTH_TOPUP"),` +
       `D${sheetRow}*-1,D${sheetRow})`;
 
-    // Mirror Python's float(): convert only when the WHOLE string is
-    // numeric, otherwise pass the original through untouched.
-    //
-    // parseFloat() must not be used here — it parses a leading prefix, so
-    // the comma-grouped amounts Flipkart exports ("1,234.50") would silently
-    // become 1. Leaving such a value as a string is correct: USER_ENTERED
-    // makes Sheets parse "1,234.50" as 1234.5 itself, which is exactly what
-    // the Python did.
-    let gross = row.grossAmount || '';
-    const grossText = String(gross).trim();
-    const grossNum = Number(grossText);
-    if (grossText !== '' && Number.isFinite(grossNum)) gross = grossNum;
+    const transId = getFieldValue(row, 'transactionId');
+    let gross = getFieldValue(row, 'grossAmount');
+    const campaignId = getFieldValue(row, 'campaignId');
+    const campaign = getFieldValue(row, 'campaign');
+    const operation = getFieldValue(row, 'operation');
+    const opSubType = getFieldValue(row, 'operationSubType');
+    const status = getFieldValue(row, 'status');
+
+    let grossNum = NaN;
+    if (typeof gross === 'number') {
+      grossNum = gross;
+    } else if (typeof gross === 'string') {
+      const cleanGross = gross.replace(/[^0-9.-]/g, '');
+      if (cleanGross !== '') {
+        const parsed = Number(cleanGross);
+        if (Number.isFinite(parsed)) grossNum = parsed;
+      }
+    }
+    const finalGross = Number.isFinite(grossNum) ? grossNum : (gross || '');
 
     return [
       aVal,
       bVal,
-      row.transactionId || '',
-      gross,
-      row.campaignId || '',
-      row.campaign || '',
-      row.operation || '',
-      row.operationSubType || '',
-      row.status || '',
-      dateStr,
+      transId,
+      finalGross,
+      campaignId,
+      campaign,
+      operation,
+      opSubType,
+      status,
+      dateFormula,
       kVal,
       '',
     ];
@@ -431,4 +531,15 @@ async function pushToSheet(csvPath, targetDate, send) {
   return batch.length;
 }
 
-module.exports = { getPresentDates, missingDatesInWindow, pushToSheet };
+module.exports = {
+  getPresentDates,
+  missingDatesInWindow,
+  pushToSheet,
+  parseReport,
+  parseCsvFile,
+  parseXlsxFile,
+  rowsFromMatrix,
+  normaliseHeader,
+  canonicalReportHeader,
+  REPORT_HEADER_ALIASES,
+};
