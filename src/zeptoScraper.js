@@ -821,9 +821,22 @@ async function runLoginCheck(page, creds, options, send = () => {}) {
 async function runZeptoJob(send, options = {}) {
   const creds = getRawZeptoCredentials();
   const action = options.action || options.module || 'daily';
-  const isHeaded = options.headed !== undefined ? Boolean(options.headed) : creds.headed === '1';
 
-  log(send, `[zepto] Initializing pure Node.js Zepto Engine (action: ${action})...`);
+  // Detect if a GUI display is available (Windows, macOS, or Linux with X11 $DISPLAY)
+  const hasDisplay = process.platform === 'win32' || process.platform === 'darwin' || Boolean(process.env.DISPLAY);
+  let isHeaded = false;
+  if (options.headed !== undefined) {
+    isHeaded = Boolean(options.headed);
+  } else if (creds.headed === '1') {
+    isHeaded = true;
+  }
+
+  if (isHeaded && !hasDisplay) {
+    log(send, '[zepto.browser] Cloud environment has no X11 display. Launching headless browser with real-time Live Canvas view.');
+    isHeaded = false;
+  }
+
+  log(send, `[zepto] Initializing pure Node.js Zepto Engine (action: ${action}, headless: ${!isHeaded})...`);
 
   const run = createRunContext('zepto');
   const profileDir = getProfileDir();

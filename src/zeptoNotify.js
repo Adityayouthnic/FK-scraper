@@ -42,4 +42,13 @@ async function sendZeptoFailureAlert(subject, body) {
   }
 }
 
-module.exports = { sendZeptoFailureAlert };
+async function sendZeptoAlert(action, errorMsg, tailLogs = '') {
+  const subject = `FAILED at ${action} — ${new Date().toLocaleDateString('en-IN')}`;
+  const body = `The Zepto automation run failed at stage '${action}'.\n\nError: ${errorMsg}\n\nLast logs:\n${tailLogs}\n`;
+  return await sendZeptoFailureAlert(subject, body);
+}
+
+module.exports = {
+  sendZeptoAlert,
+  sendZeptoFailureAlert,
+};
