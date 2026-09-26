@@ -42,6 +42,47 @@ function quoteSheetName(name) {
   return `'${name.replace(/'/g, "''")}'`;
 }
 
+/**
+ * Robust date comparison helper that handles various Google Sheet display formats:
+ * M/D/YYYY, MM/DD/YYYY, D/M/YYYY, DD/MM/YYYY, YYYY-MM-DD, Date objects, etc.
+ */
+function isSameDate(cellVal, { y, m, d }) {
+  if (!cellVal) return false;
+  const s = String(cellVal).trim();
+  if (!s) return false;
+
+  const targetY = y;
+  const targetM = m;
+  const targetD = d;
+
+  const candidates = [
+    `${targetM}/${targetD}/${targetY}`,
+    `${String(targetM).padStart(2, '0')}/${String(targetD).padStart(2, '0')}/${targetY}`,
+    `${targetD}/${targetM}/${targetY}`,
+    `${String(targetD).padStart(2, '0')}/${String(targetM).padStart(2, '0')}/${targetY}`,
+    `${targetY}-${String(targetM).padStart(2, '0')}-${String(targetD).padStart(2, '0')}`,
+    `${targetY}-${targetM}-${targetD}`,
+  ];
+  if (candidates.includes(s)) return true;
+
+  const parts = s.split(/[\/\-\.]/).map((p) => parseInt(p, 10));
+  if (parts.length === 3 && !parts.some(isNaN)) {
+    let [p1, p2, p3] = parts;
+    if (p3 < 100) p3 += 2000;
+    if (p3 === targetY) {
+      if ((p1 === targetM && p2 === targetD) || (p1 === targetD && p2 === targetM)) return true;
+    }
+  }
+
+  const dt = new Date(s);
+  if (!isNaN(dt.getTime())) {
+    if (dt.getFullYear() === targetY && (dt.getMonth() + 1) === targetM && dt.getDate() === targetD) {
+      return true;
+    }
+  }
+  return false;
+}
+
 async function openTrendsWorksheet(send) {
   const spreadsheetId = settings.TRENDS_SPREADSHEET_ID;
   const sheetName = settings.TRENDS_SHEET_NAME;
@@ -61,7 +102,6 @@ async function openTrendsWorksheet(send) {
     throw new Error(`Sheet tab '${sheetName}' not found in spreadsheet '${spreadsheetId}'.`);
   }
 
-  log(send, 'trends.sheets', `Connected to sheet '${sheetName}' (ID: ${sheetProps.properties.sheetId})`);
   return {
     sheets,
     spreadsheetId,
@@ -79,6 +119,29 @@ async function getExistingColumnsAB(ws) {
     valueRenderOption: 'FORMATTED_VALUE',
   });
   return res.data.values || [];
+}
+
+/**
+ * Checks if data for this vertical on this date is already present in Google Sheets.
+ */
+async function isVerticalAlreadyPresent(verticalLabel, targetDate, send) {
+  try {
+    const ws = await openTrendsWorksheet(send);
+    const existingAB = await getExistingColumnsAB(ws);
+    const target = (verticalLabel || '').trim().toLowerCase();
+
+    for (const [colA, colB] of existingAB) {
+      if (
+        isSameDate(colA, targetDate) &&
+        String(colB || '').trim().toLowerCase() === target
+      ) {
+        return true;
+      }
+    }
+  } catch (err) {
+    warn(send, 'trends.sheets.check', `Could not check existing sheet rows (${err.message}).`);
+  }
+  return false;
 }
 
 /**
@@ -102,11 +165,15 @@ async function pushTrends(rows, verticalLabel, scrapedDate, send) {
   // US-style M/D/YYYY, matching the existing column A values (e.g. "8/10/2026").
   const dateStr = `${scrapedDate.m}/${scrapedDate.d}/${scrapedDate.y}`;
 
-  // ---- Dedup: skip if this (date, vertical) pair was already pushed ----
+  // ---- Strict Dedup: skip if this (date, vertical) pair was already pushed ----
   const existingAB = await getExistingColumnsAB(ws);
+  const target = (verticalLabel || '').trim().toLowerCase();
   for (const [colA, colB] of existingAB) {
-    if (String(colA || '').trim() === dateStr && String(colB || '').trim() === verticalLabel) {
-      log(send, step, `'${verticalLabel}' for ${dateStr} already in sheet — skipping to prevent duplicates.`);
+    if (
+      isSameDate(colA, scrapedDate) &&
+      String(colB || '').trim().toLowerCase() === target
+    ) {
+      log(send, step, `'${verticalLabel}' for ${dateStr} is already in Google Sheets — skipping push to prevent duplicate rows.`);
       return 0;
     }
   }
@@ -169,6 +236,8 @@ async function pushTrends(rows, verticalLabel, scrapedDate, send) {
 
 module.exports = {
   pushTrends,
+  isVerticalAlreadyPresent,
+  isSameDate,
   openTrendsWorksheet,
   _I_TEMPLATE,
   _J_TEMPLATE,

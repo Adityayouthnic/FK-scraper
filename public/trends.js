@@ -91,7 +91,11 @@ ws.addEventListener('message', (event) => {
       setStatus(msg.state);
       break;
     case 'done':
-      appendLog(`Done. ${msg.verticalsProcessed || 1} vertical(s) processed, ${msg.rowsAdded || 0} row(s) added to Google Sheets.`, 'done');
+      if (msg.rowsAdded > 0) {
+        appendLog(`Done. ${msg.verticalsProcessed || 1} vertical(s) processed, ${msg.rowsAdded} row(s) added to Google Sheets.`, 'done');
+      } else {
+        appendLog(`Done. Selected vertical(s) are already recorded for today in Google Sheets — skipped to prevent duplicates.`, 'done');
+      }
       statLastRun.textContent = new Date().toLocaleTimeString();
       statLastResult.textContent = 'Success';
       statRowsAdded.textContent = msg.rowsAdded || 0;

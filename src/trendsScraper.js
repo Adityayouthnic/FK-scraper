@@ -13,7 +13,7 @@
  * Runs inside the persistent Live URL session — login happens only once.
  */
 const { settings } = require('./config');
-const { pushTrends } = require('./trendsSheets');
+const { pushTrends, isVerticalAlreadyPresent } = require('./trendsSheets');
 const { log, warn, humanPause } = require('./utils');
 const { todayIST } = require('./dateUtil');
 const {
@@ -263,6 +263,19 @@ async function runTrendsJob(send, options = {}) {
       log(send, 'trends', `========================================`);
       log(send, 'trends', `Vertical [${verticalsProcessed + 1}/${targetEntries.length}]: ${label}`);
       log(send, 'trends', `========================================`);
+
+      // Pre-check: skip if data for this vertical on today's date is already recorded in the sheet
+      const alreadyPresent = await awaitCancellable(run, isVerticalAlreadyPresent(label, today, send));
+      if (alreadyPresent) {
+        log(
+          send,
+          'trends',
+          `'${label}' already has data recorded in Google Sheets for today (${today.m}/${today.d}/${today.y}). Skipping to prevent duplication.`
+        );
+        verticalsProcessed += 1;
+        results.push({ vertical: label, slug, rowsScraped: 0, rowsPushed: 0, skipped: true });
+        continue;
+      }
 
       const rows = await scrapeVertical(page, send, run, slug, pagesPerVertical);
       const pushed = await awaitCancellable(run, pushTrends(rows, label, today, send));
