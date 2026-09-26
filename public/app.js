@@ -126,14 +126,16 @@ ws.addEventListener('message', (event) => {
       statLastResult.textContent = 'Success';
       break;
     case 'cancelled':
-      appendLog(msg.message || 'Run cancelled.', 'info');
+      appendLog(msg.message || 'Run cancelled.', 'warn');
       statLastRun.textContent = new Date().toLocaleTimeString();
       statLastResult.textContent = 'Cancelled';
+      setStatus('idle');
       break;
     case 'error':
       appendLog(`Error: ${msg.message}`, 'error');
       statLastRun.textContent = new Date().toLocaleTimeString();
       statLastResult.textContent = 'Failed';
+      setStatus('error');
       if (msg.message === 'Invalid access code.') {
         const token = prompt('Enter access code:') || '';
         localStorage.setItem('fk_scraper_token', token);
@@ -146,8 +148,15 @@ ws.addEventListener('message', (event) => {
 runBtn.addEventListener('click', () => {
   const token = localStorage.getItem('fk_scraper_token') || '';
   if (isRunning) {
+    runBtn.disabled = true;
+    runBtnLabel.textContent = 'Stopping...';
     ws.send(JSON.stringify({ type: 'cancel', token }));
-    appendLog('Cancellation requested.', 'info');
+    appendLog('Stop requested. Halting process immediately...', 'warn');
+    setTimeout(() => {
+      if (isRunning) {
+        setStatus('idle');
+      }
+    }, 600);
     return;
   }
   log.textContent = '';

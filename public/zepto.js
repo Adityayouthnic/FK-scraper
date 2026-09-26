@@ -169,22 +169,31 @@ ws.addEventListener('message', (event) => {
       statLastResult.textContent = 'Success';
       break;
     case 'cancelled':
-      appendLog(msg.message || 'Run cancelled by user.', 'info');
+      appendLog(msg.message || 'Run cancelled by user.', 'warn');
       statLastRun.textContent = new Date().toLocaleTimeString();
       statLastResult.textContent = 'Cancelled';
+      setStatus('idle');
       break;
     case 'error':
       appendLog(`Error: ${msg.message}`, 'error');
       statLastRun.textContent = new Date().toLocaleTimeString();
       statLastResult.textContent = 'Failed';
+      setStatus('error');
       break;
   }
 });
 
 runBtn.addEventListener('click', () => {
   if (isRunning) {
+    runBtn.disabled = true;
+    runBtnLabel.textContent = 'Stopping...';
     ws.send(JSON.stringify({ type: 'cancel' }));
-    appendLog('Cancellation requested.', 'info');
+    appendLog('Stop requested. Halting process immediately...', 'warn');
+    setTimeout(() => {
+      if (isRunning) {
+        setStatus('idle');
+      }
+    }, 600);
     return;
   }
 

@@ -216,6 +216,8 @@ async function runTrendsJob(send, options = {}) {
     const sessionInfo = await getOrCreateLiveSession(send, run);
     page = sessionInfo.page;
     context = sessionInfo.context;
+    run.context = context;
+    run.page = page;
 
     // Attach real-time screencast so the user sees the live session immediately
     client = await setupScreencast(run, context, page, send);

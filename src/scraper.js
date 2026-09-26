@@ -25,6 +25,8 @@ async function runScrapeJob(send, options = {}) {
     const sessionInfo = await getOrCreateLiveSession(send, run);
     page = sessionInfo.page;
     context = sessionInfo.context;
+    run.context = context;
+    run.page = page;
 
     client = await setupScreencast(run, context, page, send);
 

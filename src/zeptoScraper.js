@@ -241,7 +241,7 @@ async function fillOtp(page, code, send = () => {}) {
 /**
  * Executes automated login with IMAP OTP resolution.
  */
-async function autoLogin(page, creds, send = () => {}) {
+async function autoLogin(page, creds, send = () => {}, run = null) {
   const email = creds.email;
   const password = creds.password;
 
@@ -250,9 +250,11 @@ async function autoLogin(page, creds, send = () => {}) {
   }
 
   log(send, '[zepto.auth] Submitting credentials to Zepto portal...');
+  if (run?.cancelled) throw new RunCancelledError();
   await page.goto(LOGIN_URL, { waitUntil: 'domcontentloaded' });
-  await page.waitForTimeout(3000);
+  await page.waitForTimeout(2500);
 
+  if (run?.cancelled) throw new RunCancelledError();
   if (await isLoggedIn(page)) {
     log(send, '[zepto.auth] Already signed in.');
     return;
@@ -269,7 +271,8 @@ async function autoLogin(page, creds, send = () => {}) {
   // Poll for dashboard, OTP challenge, or credentials error
   let otpFound = false;
   for (let i = 0; i < 20; i++) {
-    await page.waitForTimeout(2000);
+    if (run?.cancelled) throw new RunCancelledError();
+    await page.waitForTimeout(1500);
 
     if (await isLoggedIn(page)) {
       log(send, '[zepto.auth] Signed in — no OTP was required.');
@@ -288,6 +291,7 @@ async function autoLogin(page, creds, send = () => {}) {
     }
   }
 
+  if (run?.cancelled) throw new RunCancelledError();
   if (!otpFound) {
     throw new Error(`Neither dashboard nor OTP screen appeared (still on ${page.url()}).`);
   }
@@ -300,14 +304,18 @@ async function autoLogin(page, creds, send = () => {}) {
       password: creds.imapPassword,
     },
     submittedAt,
-    (msg) => log(send, msg)
+    (msg) => log(send, msg),
+    180000,
+    () => run?.cancelled
   );
 
+  if (run?.cancelled) throw new RunCancelledError();
   log(send, `[zepto.auth] Got ${code.length}-digit OTP from email. Entering into portal...`);
   await fillOtp(page, code, send);
 
   for (let i = 0; i < 15; i++) {
-    await page.waitForTimeout(2000);
+    if (run?.cancelled) throw new RunCancelledError();
+    await page.waitForTimeout(1500);
     if (await isLoggedIn(page)) {
       log(send, '[zepto.auth] OTP accepted — successfully authenticated to Zepto!');
       return;
@@ -320,21 +328,24 @@ async function autoLogin(page, creds, send = () => {}) {
 /**
  * Ensures browser has an active authenticated session.
  */
-async function ensureSession(page, creds, send = () => {}) {
+async function ensureSession(page, creds, send = () => {}, run = null) {
   log(send, '[zepto.auth] Checking portal session status...');
+  if (run?.cancelled) throw new RunCancelledError();
   await page.goto(REPORTS_URL, { waitUntil: 'domcontentloaded' });
-  await page.waitForTimeout(4000);
+  await page.waitForTimeout(3000);
 
+  if (run?.cancelled) throw new RunCancelledError();
   if (await isLoggedIn(page)) {
     log(send, '[zepto.auth] Active session verified.');
     return;
   }
 
   log(send, '[zepto.auth] Session expired or not logged in. Initiating automated sign-in...');
-  await autoLogin(page, creds, send);
+  await autoLogin(page, creds, send, run);
 
+  if (run?.cancelled) throw new RunCancelledError();
   await page.goto(REPORTS_URL, { waitUntil: 'domcontentloaded' });
-  await page.waitForTimeout(4000);
+  await page.waitForTimeout(3000);
 }
 
 /**
@@ -474,33 +485,48 @@ async function pickReportType(page, reportType) {
 /**
  * Submits a new report request via portal UI.
  */
-async function requestReport(page, reportType, startStr = null, endStr = null, send = () => {}) {
+async function requestReport(page, reportType, startStr = null, endStr = null, send = () => {}, run = null) {
   const span = startStr && endStr ? `: ${startStr} -> ${endStr}` : ' (snapshot — no date range)';
   log(send, `[zepto.rep] Requesting report '${reportType}'${span}...`);
 
+  if (run?.cancelled) throw new RunCancelledError();
   await page.goto(REPORTS_URL, { waitUntil: 'domcontentloaded' });
-  await page.waitForTimeout(5000);
+  for (let i = 0; i < 10; i++) {
+    if (run?.cancelled) throw new RunCancelledError();
+    await page.waitForTimeout(300);
+  }
 
   const rowsBefore = await getTableRows(page);
   const idsBefore = new Set(rowsBefore.map((r) => r.request_id));
 
+  if (run?.cancelled) throw new RunCancelledError();
   await page.getByRole('button', { name: 'Request Report' }).first().click();
-  await page.waitForTimeout(3000);
+  for (let i = 0; i < 6; i++) {
+    if (run?.cancelled) throw new RunCancelledError();
+    await page.waitForTimeout(300);
+  }
 
+  if (run?.cancelled) throw new RunCancelledError();
   await pickReportType(page, reportType);
 
   const dateInputCount = await page.locator("input[placeholder='mm/dd/yyyy']").count();
   if (dateInputCount >= 2 && startStr && endStr) {
     log(send, `[zepto.rep] Filling date range: ${startStr} to ${endStr}`);
+    if (run?.cancelled) throw new RunCancelledError();
     await fillDateInput(page, 'from', startStr);
+    if (run?.cancelled) throw new RunCancelledError();
     await fillDateInput(page, 'to', endStr);
   } else if (dateInputCount >= 2) {
     throw new Error(`Report type '${reportType}' requires a date range, but none was provided.`);
   }
 
+  if (run?.cancelled) throw new RunCancelledError();
   await page.getByRole('button', { name: 'Submit', exact: true }).click();
   log(send, '[zepto.rep] Report request submitted. Waiting for processing...');
-  await page.waitForTimeout(5000);
+  for (let i = 0; i < 10; i++) {
+    if (run?.cancelled) throw new RunCancelledError();
+    await page.waitForTimeout(300);
+  }
 
   return idsBefore;
 }
@@ -508,14 +534,17 @@ async function requestReport(page, reportType, startStr = null, endStr = null, s
 /**
  * Refreshes the reports table until the target request status is 'Completed'.
  */
-async function waitForReportCompletion(page, beforeIds, targetRequestId = null, send = () => {}, timeoutSec = 300) {
+async function waitForReportCompletion(page, beforeIds, targetRequestId = null, send = () => {}, timeoutSec = 300, run = null) {
   const deadline = Date.now() + timeoutSec * 1000;
   let requestId = targetRequestId;
 
   while (Date.now() < deadline) {
-    await page.reload({ waitUntil: 'domcontentloaded' });
-    await page.waitForTimeout(6000);
+    if (run?.cancelled) throw new RunCancelledError();
 
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(3000);
+
+    if (run?.cancelled) throw new RunCancelledError();
     const rows = await getTableRows(page);
 
     if (!requestId) {
@@ -544,7 +573,11 @@ async function waitForReportCompletion(page, beforeIds, targetRequestId = null, 
       log(send, '[zepto.rep] Waiting for request to appear in table...');
     }
 
-    await page.waitForTimeout(8000);
+    // Sleep in small 400ms slices for instant cancellation
+    for (let s = 0; s < 15; s++) {
+      if (run?.cancelled) throw new RunCancelledError();
+      await page.waitForTimeout(400);
+    }
   }
 
   throw new Error(`Report generation timed out after ${timeoutSec}s.`);
@@ -553,7 +586,8 @@ async function waitForReportCompletion(page, beforeIds, targetRequestId = null, 
 /**
  * Obtains the report CSV data via presigned S3 URL or button download interception.
  */
-async function fetchReportData(page, requestId, send = () => {}) {
+async function fetchReportData(page, requestId, send = () => {}, run = null) {
+  if (run?.cancelled) throw new RunCancelledError();
   const apiPath = `/api/v1/reports/${requestId}/download`;
   log(send, `[zepto.rep] Resolving download URL for report ${requestId}...`);
 
@@ -570,6 +604,7 @@ async function fetchReportData(page, requestId, send = () => {}) {
     downloadLink.click(),
   ]);
 
+  if (run?.cancelled) throw new RunCancelledError();
   if (!response.ok()) {
     throw new Error(`Zepto download API returned HTTP ${response.status()}`);
   }
@@ -582,6 +617,7 @@ async function fetchReportData(page, requestId, send = () => {}) {
   }
 
   log(send, '[zepto.rep] Downloading report CSV from presigned S3 storage...');
+  if (run?.cancelled) throw new RunCancelledError();
   const s3Res = await fetch(signedUrl);
   if (!s3Res.ok) {
     throw new Error(`Failed to download report from S3: HTTP ${s3Res.status}`);
@@ -598,12 +634,16 @@ async function fetchReportData(page, requestId, send = () => {}) {
 /**
  * Finds an existing report or requests a new one and waits for completion.
  */
-async function locateOrRequestReport(page, reportType, startStr = null, endStr = null, force = false, send = () => {}) {
+async function locateOrRequestReport(page, reportType, startStr = null, endStr = null, force = false, send = () => {}, run = null) {
   const span = startStr && endStr ? `${startStr} -> ${endStr}` : 'today';
 
   if (!force) {
+    if (run?.cancelled) throw new RunCancelledError();
     await page.goto(REPORTS_URL, { waitUntil: 'domcontentloaded' });
-    await page.waitForTimeout(5000);
+    for (let i = 0; i < 10; i++) {
+      if (run?.cancelled) throw new RunCancelledError();
+      await page.waitForTimeout(300);
+    }
 
     const existing = await findExistingReport(page, reportType, startStr, endStr);
     if (existing) {
@@ -612,12 +652,13 @@ async function locateOrRequestReport(page, reportType, startStr = null, endStr =
         return existing.request_id;
       }
       log(send, `[zepto.rep] A request for ${span} is already running (${existing.request_id}). Waiting on it...`);
-      return await waitForReportCompletion(page, new Set(), existing.request_id, send);
+      return await waitForReportCompletion(page, new Set(), existing.request_id, send, 300, run);
     }
   }
 
-  const beforeIds = await requestReport(page, reportType, startStr, endStr, send);
-  return await waitForReportCompletion(page, beforeIds, null, send);
+  if (run?.cancelled) throw new RunCancelledError();
+  const beforeIds = await requestReport(page, reportType, startStr, endStr, send, run);
+  return await waitForReportCompletion(page, beforeIds, null, send, 300, run);
 }
 
 /**
@@ -636,7 +677,7 @@ function getDefaultSalesRange() {
 /**
  * Action: Sales Sync
  */
-async function runSalesSync(page, creds, options, send = () => {}) {
+async function runSalesSync(page, creds, options, send = () => {}, run = null) {
   log(send, '[zepto.sales] Starting Sales Sync pipeline...');
   const sheetId = creds.sheetId || options.sheetId;
   if (!sheetId) {
@@ -674,9 +715,12 @@ async function runSalesSync(page, creds, options, send = () => {}) {
     log(send, `[zepto.sales] Missing dates detected: backfilling from ${startPortal} to ${endPortal} (${missing.length} day(s))`);
   }
 
-  await ensureSession(page, creds, send);
-  const requestId = await locateOrRequestReport(page, 'Sales_F', startPortal, endPortal, options.force, send);
-  const { filename, csvText } = await fetchReportData(page, requestId, send);
+  if (run?.cancelled) throw new RunCancelledError();
+  await ensureSession(page, creds, send, run);
+  if (run?.cancelled) throw new RunCancelledError();
+  const requestId = await locateOrRequestReport(page, 'Sales_F', startPortal, endPortal, options.force, send, run);
+  if (run?.cancelled) throw new RunCancelledError();
+  const { filename, csvText } = await fetchReportData(page, requestId, send, run);
 
   log(send, `[zepto.sales] Transforming Sales CSV (${csvText.length.toLocaleString('en-IN')} bytes)...`);
   const transformedRows = transformSalesCsv(csvText, lookups, send);
@@ -686,6 +730,7 @@ async function runSalesSync(page, creds, options, send = () => {}) {
     return { rowsProcessed: transformedRows.length, datesProcessed: 0, dryRun: true };
   }
 
+  if (run?.cancelled) throw new RunCancelledError();
   const result = await appendSalesData(sheets, sheetId, transformedRows, send);
   log(send, `[zepto.sales] Sales Sync completed successfully: +${result.rowsAppended} rows appended across ${result.datesAppended} date(s).`);
   return {
@@ -698,7 +743,7 @@ async function runSalesSync(page, creds, options, send = () => {}) {
 /**
  * Action: FC Inventory Refresh
  */
-async function runInventoryRefresh(page, creds, options, send = () => {}) {
+async function runInventoryRefresh(page, creds, options, send = () => {}, run = null) {
   log(send, '[zepto.inv] Starting FC Inventory Refresh pipeline...');
   const sheetId = creds.sheetId || options.sheetId;
   if (!sheetId) {
@@ -706,16 +751,20 @@ async function runInventoryRefresh(page, creds, options, send = () => {}) {
   }
 
   const sheets = await getSheetsClient();
-  await ensureSession(page, creds, send);
+  if (run?.cancelled) throw new RunCancelledError();
+  await ensureSession(page, creds, send, run);
+  if (run?.cancelled) throw new RunCancelledError();
 
-  const requestId = await locateOrRequestReport(page, 'Vendor Inventory_F', null, null, options.force, send);
-  const { filename, csvText } = await fetchReportData(page, requestId, send);
+  const requestId = await locateOrRequestReport(page, 'Vendor Inventory_F', null, null, options.force, send, run);
+  if (run?.cancelled) throw new RunCancelledError();
+  const { filename, csvText } = await fetchReportData(page, requestId, send, run);
 
   if (options.dryRun) {
     log(send, `[zepto.inv] DRY RUN: Downloaded ${filename} (${csvText.length.toLocaleString('en-IN')} bytes). Skipping tab replace.`);
     return { rowsProcessed: 0, dryRun: true };
   }
 
+  if (run?.cancelled) throw new RunCancelledError();
   const targetDate = options.date ? parseAnyDate(options.date) : new Date();
   const result = await refreshInventoryData(sheets, sheetId, csvText, targetDate, send);
   log(send, `[zepto.inv] Inventory refresh complete: ${result.rowsWritten} rows updated (${result.totalUnits} total units).`);
@@ -729,7 +778,7 @@ async function runInventoryRefresh(page, creds, options, send = () => {}) {
 /**
  * Action: Custom Report Download
  */
-async function runDownloadReport(page, creds, options, send = () => {}) {
+async function runDownloadReport(page, creds, options, send = () => {}, run = null) {
   const reportType = options.reportType || 'Sales_F';
   log(send, `[zepto.download] Starting report download for '${reportType}'...`);
 
@@ -747,9 +796,12 @@ async function runDownloadReport(page, creds, options, send = () => {}) {
     }
   }
 
-  await ensureSession(page, creds, send);
-  const requestId = await locateOrRequestReport(page, reportType, startPortal, endPortal, options.force, send);
-  const { filename, csvText } = await fetchReportData(page, requestId, send);
+  if (run?.cancelled) throw new RunCancelledError();
+  await ensureSession(page, creds, send, run);
+  if (run?.cancelled) throw new RunCancelledError();
+  const requestId = await locateOrRequestReport(page, reportType, startPortal, endPortal, options.force, send, run);
+  if (run?.cancelled) throw new RunCancelledError();
+  const { filename, csvText } = await fetchReportData(page, requestId, send, run);
 
   const downloadsDir = path.join(__dirname, '..', 'downloads');
   if (!fs.existsSync(downloadsDir)) {
@@ -773,13 +825,18 @@ async function runDownloadReport(page, creds, options, send = () => {}) {
 /**
  * Action: Login / Session Check
  */
-async function runLoginCheck(page, creds, options, send = () => {}) {
+async function runLoginCheck(page, creds, options, send = () => {}, run = null) {
   const mode = options.mode || 'auto';
   log(send, `[zepto.login] Running session check (mode: ${mode})...`);
 
+  if (run?.cancelled) throw new RunCancelledError();
   await page.goto(REPORTS_URL, { waitUntil: 'domcontentloaded' });
-  await page.waitForTimeout(4000);
+  for (let i = 0; i < 10; i++) {
+    if (run?.cancelled) throw new RunCancelledError();
+    await page.waitForTimeout(300);
+  }
 
+  if (run?.cancelled) throw new RunCancelledError();
   if (await isLoggedIn(page)) {
     log(send, '[zepto.login] Existing session is valid and authenticated!');
     return { success: true, message: 'Session is active and valid.' };
@@ -792,11 +849,14 @@ async function runLoginCheck(page, creds, options, send = () => {}) {
     log(send, '[zepto.login] Waiting up to 10 minutes for authentication...');
     log(send, '[zepto.login] ========================================');
 
+    if (run?.cancelled) throw new RunCancelledError();
     await page.goto(LOGIN_URL, { waitUntil: 'domcontentloaded' });
     const deadline = Date.now() + 600000;
 
     while (Date.now() < deadline) {
-      await page.waitForTimeout(3000);
+      if (run?.cancelled) throw new RunCancelledError();
+      await page.waitForTimeout(500);
+      if (run?.cancelled) throw new RunCancelledError();
       if (await isLoggedIn(page)) {
         log(send, '[zepto.login] Sign-in detected! Session successfully saved.');
         return { success: true, message: 'Setup completed successfully.' };
@@ -806,7 +866,7 @@ async function runLoginCheck(page, creds, options, send = () => {}) {
     throw new Error('Interactive setup timed out before sign-in completed.');
   } else {
     log(send, '[zepto.login] Session not found. Executing auto-login...');
-    await autoLogin(page, creds, send);
+    await autoLogin(page, creds, send, run);
     return { success: true, message: 'Automated login completed successfully.' };
   }
 }
@@ -870,41 +930,51 @@ async function runZeptoJob(send, options = {}) {
   try {
     // Launch persistent browser context
     context = await awaitCancellable(run, chromium.launchPersistentContext(profileDir, launchOptions));
+    run.context = context;
+    run.browser = context;
     context.setDefaultTimeout(45000);
     context.setDefaultNavigationTimeout(60000);
 
+    if (run.cancelled) throw new RunCancelledError();
+
     page = context.pages().length > 0 ? context.pages()[0] : await context.newPage();
+    run.page = page;
     setActivePage(page);
+
+    if (run.cancelled) throw new RunCancelledError();
 
     // Attach real-time CDP screencast to live view canvas
     try {
       cdpClient = await setupScreencast(run, context, page, wrappedSend);
       log(wrappedSend, '[zepto.view] Live CDP screencast stream active.');
     } catch (screencastErr) {
+      if (run.cancelled) throw new RunCancelledError();
       log(wrappedSend, `[zepto.view] Screencast notice: ${screencastErr.message}`);
     }
+
+    if (run.cancelled) throw new RunCancelledError();
 
     let result = null;
 
     switch (action) {
       case 'sales':
       case 'sheet_pipeline':
-        result = await awaitCancellable(run, runSalesSync(page, creds, options, wrappedSend));
+        result = await awaitCancellable(run, runSalesSync(page, creds, options, wrappedSend, run));
         break;
 
       case 'inventory':
       case 'inventory_pipeline':
-        result = await awaitCancellable(run, runInventoryRefresh(page, creds, options, wrappedSend));
+        result = await awaitCancellable(run, runInventoryRefresh(page, creds, options, wrappedSend, run));
         break;
 
       case 'login':
       case 'auth':
-        result = await awaitCancellable(run, runLoginCheck(page, creds, options, wrappedSend));
+        result = await awaitCancellable(run, runLoginCheck(page, creds, options, wrappedSend, run));
         break;
 
       case 'download':
       case 'download_report':
-        result = await awaitCancellable(run, runDownloadReport(page, creds, options, wrappedSend));
+        result = await awaitCancellable(run, runDownloadReport(page, creds, options, wrappedSend, run));
         break;
 
       case 'daily':
@@ -913,12 +983,14 @@ async function runZeptoJob(send, options = {}) {
         log(wrappedSend, '[zepto.daily] ----------------------------------------');
         log(wrappedSend, '[zepto.daily] STAGE 1: Sales Sync (Missed Dates Backfill)');
         log(wrappedSend, '[zepto.daily] ----------------------------------------');
-        const salesRes = await awaitCancellable(run, runSalesSync(page, creds, options, wrappedSend));
+        const salesRes = await awaitCancellable(run, runSalesSync(page, creds, options, wrappedSend, run));
+
+        if (run.cancelled) throw new RunCancelledError();
 
         log(wrappedSend, '[zepto.daily] ----------------------------------------');
         log(wrappedSend, '[zepto.daily] STAGE 2: FC Inventory Snapshot Refresh');
         log(wrappedSend, '[zepto.daily] ----------------------------------------');
-        const invRes = await awaitCancellable(run, runInventoryRefresh(page, creds, options, wrappedSend));
+        const invRes = await awaitCancellable(run, runInventoryRefresh(page, creds, options, wrappedSend, run));
 
         result = {
           success: true,
@@ -940,8 +1012,20 @@ async function runZeptoJob(send, options = {}) {
       ...result,
     };
   } catch (err) {
-    if (run.cancelled || err.code === 'RUN_CANCELLED') {
-      log(wrappedSend, '[zepto] Run was cancelled by user.');
+    const isCancelled =
+      run.cancelled ||
+      err.code === 'RUN_CANCELLED' ||
+      err instanceof RunCancelledError ||
+      (err.message && (
+        err.message.includes('Target page, context or browser has been closed') ||
+        err.message.includes('TargetClosedError') ||
+        err.message.includes('Browser has been closed') ||
+        err.message.includes('closed') ||
+        err.message.includes('cancelled')
+      ) && run.cancelled);
+
+    if (isCancelled) {
+      log(wrappedSend, '[zepto] Process stopped immediately upon user request.');
       throw new RunCancelledError();
     }
 

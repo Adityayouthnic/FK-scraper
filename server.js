@@ -10,7 +10,7 @@ const { WebSocketServer } = require('ws');
 const { runScrapeJob } = require('./src/scraper');
 const { runTrendsJob } = require('./src/trendsScraper');
 const { runZeptoJob } = require('./src/zeptoScraper');
-const { dispatchInput, cancelActiveRun } = require('./src/runner');
+const { dispatchInput, cancelActiveRun, getActiveRun } = require('./src/runner');
 const { closeLiveSession } = require('./src/sessionManager');
 const { initScheduler, getScheduleStatus, executeScheduledJob, updateScheduleConfig } = require('./src/scheduler');
 const { sendAlert } = require('./src/alerts');
@@ -358,8 +358,17 @@ wss.on('connection', (ws, req) => {
         send('status', { state: 'idle' });
         return;
       }
-      send('log', { message: 'Cancellation requested.' });
+      send('log', { message: 'Stopping process immediately...' });
       cancelActiveRun();
+      setTimeout(() => {
+        if (isRunning) {
+          isRunning = false;
+          activeWs = null;
+          activeJob = null;
+          broadcast('status', { state: 'idle' });
+          broadcast('cancelled', { message: 'Process stopped by user.' });
+        }
+      }, 500);
       return;
     }
 
@@ -393,8 +402,9 @@ wss.on('connection', (ws, req) => {
       }
       send('done', { success: true, job: activeJob, ...result });
     } catch (err) {
-      if (err.code === 'RUN_CANCELLED') {
-        broadcast('cancelled', { message: err.message, job: activeJob });
+      const activeRun = getActiveRun();
+      if (err.code === 'RUN_CANCELLED' || err.name === 'RunCancelledError' || (activeRun && activeRun.cancelled)) {
+        broadcast('cancelled', { message: 'Process stopped by user.', job: activeJob });
       } else {
         console.error(err);
         send('error', { message: err.message || 'Run failed.', job: activeJob });

@@ -46,6 +46,24 @@ function cancelActiveRun() {
   if (!activeRun) return false;
 
   activeRun.cancelled = true;
+
+  // Immediately close active Playwright page/context/browser to abort in-flight operations
+  if (activeRun.page && typeof activeRun.page.close === 'function') {
+    try {
+      activeRun.page.close().catch(() => {});
+    } catch {}
+  }
+  if (activeRun.context && typeof activeRun.context.close === 'function') {
+    try {
+      activeRun.context.close().catch(() => {});
+    } catch {}
+  }
+  if (activeRun.browser && activeRun.browser !== activeRun.context && typeof activeRun.browser.close === 'function') {
+    try {
+      activeRun.browser.close().catch(() => {});
+    } catch {}
+  }
+
   if (activeRun.process) {
     try {
       if (process.platform === 'win32') {
@@ -57,7 +75,9 @@ function cancelActiveRun() {
     } catch {}
   }
   if (activeRun.rejectCancel) {
-    activeRun.rejectCancel(new RunCancelledError());
+    try {
+      activeRun.rejectCancel(new RunCancelledError());
+    } catch {}
   }
   return true;
 }
@@ -106,6 +126,8 @@ async function dispatchInput(evt) {
 function createRunContext(jobName = 'wallet') {
   const run = {
     browser: null,
+    context: null,
+    page: null,
     cancelled: false,
     rejectCancel: null,
     resolveCancel: null,

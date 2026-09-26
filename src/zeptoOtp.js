@@ -113,7 +113,7 @@ async function tryFetchOnce({ host, user, password, sinceTs }) {
  * @param {number} timeoutMs - Max wait duration (default 180s)
  * @returns {Promise<string>} OTP code
  */
-async function fetchZeptoOtp(creds, sinceTs = Date.now(), logFn = () => {}, timeoutMs = 180000) {
+async function fetchZeptoOtp(creds, sinceTs = Date.now(), logFn = () => {}, timeoutMs = 180000, checkCancelled = () => false) {
   if (!creds || !creds.user || !creds.password) {
     throw new Error('IMAP is not configured. Provide IMAP mailbox and Google App Password in Settings.');
   }
@@ -122,6 +122,10 @@ async function fetchZeptoOtp(creds, sinceTs = Date.now(), logFn = () => {}, time
   let attempt = 0;
 
   while (Date.now() < deadline) {
+    if (checkCancelled && checkCancelled()) {
+      throw new Error('OTP fetch cancelled by user.');
+    }
+
     attempt++;
     try {
       const code = await tryFetchOnce({
@@ -143,7 +147,14 @@ async function fetchZeptoOtp(creds, sinceTs = Date.now(), logFn = () => {}, time
     }
 
     logFn(`[zepto.otp] Waiting for OTP email from ${OTP_SENDER} (attempt ${attempt})...`);
-    await new Promise((r) => setTimeout(r, 7000));
+
+    // Sleep in small 500ms chunks to break out instantly if user cancels
+    for (let s = 0; s < 14; s++) {
+      if (checkCancelled && checkCancelled()) {
+        throw new Error('OTP fetch cancelled by user.');
+      }
+      await new Promise((r) => setTimeout(r, 500));
+    }
   }
 
   throw new Error(`No OTP email from ${OTP_SENDER} arrived within ${Math.round(timeoutMs / 1000)}s.`);
