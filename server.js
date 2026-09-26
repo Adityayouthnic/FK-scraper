@@ -4,15 +4,27 @@ const path = require('path');
 const http = require('http');
 const express = require('express');
 const { WebSocketServer } = require('ws');
-const { runScrapeJob, dispatchInput, cancelActiveRun } = require('./src/scraper');
+const { runScrapeJob } = require('./src/scraper');
+const { runTrendsJob } = require('./src/trendsScraper');
+const { dispatchInput, cancelActiveRun } = require('./src/runner');
 
 const app = express();
+
+app.get('/trends', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'trends.html'));
+});
+
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
 app.use(express.static(path.join(__dirname, 'public')));
 
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server, path: '/ws' });
 
 let isRunning = false;
+let activeJob = null;
 // The single WS connection allowed to send input (mouse/keyboard) into the
 // live view: whichever connection's token-verified 'run' message started
 // the current job. Prevents another tab/visitor from hijacking control
@@ -36,7 +48,7 @@ wss.on('connection', (ws) => {
   };
 
   send('log', { message: 'Connected. Click Run to start.' });
-  send('status', { state: isRunning ? 'running' : 'idle' });
+  send('status', { state: isRunning ? 'running' : 'idle', job: activeJob });
 
   ws.on('close', () => {
     connectedClients.delete(ws);
@@ -84,21 +96,28 @@ wss.on('connection', (ws) => {
 
     isRunning = true;
     activeWs = ws;
-    broadcast('status', { state: 'running' });
+    activeJob = msg.job || 'wallet';
+    broadcast('status', { state: 'running', job: activeJob });
 
     try {
-      const result = await runScrapeJob(send);
-      send('done', { success: true, ...result });
+      let result;
+      if (activeJob === 'trends') {
+        result = await runTrendsJob(send, msg.options || {});
+      } else {
+        result = await runScrapeJob(send);
+      }
+      send('done', { success: true, job: activeJob, ...result });
     } catch (err) {
       if (err.code === 'RUN_CANCELLED') {
-        broadcast('cancelled', { message: err.message });
+        broadcast('cancelled', { message: err.message, job: activeJob });
       } else {
         console.error(err);
-        send('error', { message: err.message || 'Run failed.' });
+        send('error', { message: err.message || 'Run failed.', job: activeJob });
       }
     } finally {
       isRunning = false;
       activeWs = null;
+      activeJob = null;
       broadcast('status', { state: 'idle' });
     }
   });

@@ -5,10 +5,14 @@
  * bucket is configured yet, so the app still works via interactive login
  * alone before you've set this up.
  */
+const fs = require('fs');
+const path = require('path');
 const { Storage } = require('@google-cloud/storage');
 const { settings } = require('./config');
 const { loadServiceAccountCredentials } = require('./googleAuth');
 const { log, warn } = require('./utils');
+
+const PROJECT_ROOT = path.join(__dirname, '..');
 
 let storageClient = null;
 function getStorageClient() {
@@ -18,12 +22,31 @@ function getStorageClient() {
   return storageClient;
 }
 
+function getLocalSessionPath() {
+  const mainPath = path.join(PROJECT_ROOT, settings.SESSION_OBJECT || 'flipkart-session.json');
+  if (fs.existsSync(mainPath)) return mainPath;
+  const altPath = path.join(PROJECT_ROOT, 'fk_auth_state.json');
+  if (fs.existsSync(altPath)) return altPath;
+  return mainPath;
+}
+
 async function loadSession(send) {
   if (!settings.SESSION_BUCKET) {
+    const localPath = getLocalSessionPath();
+    if (fs.existsSync(localPath)) {
+      try {
+        const contents = fs.readFileSync(localPath, 'utf8');
+        log(send, 'session.load', `Loaded saved session from local file (${path.basename(localPath)}).`);
+        return JSON.parse(contents);
+      } catch (err) {
+        warn(send, 'session.load', `Could not parse local session file (${err.message}) — will log in fresh.`);
+        return null;
+      }
+    }
     warn(
       send,
       'session.load',
-      'No SESSION_BUCKET configured — a fresh login/CAPTCHA will be required on every run.'
+      'No SESSION_BUCKET configured and no local session found — a fresh login/CAPTCHA will be required.'
     );
     return null;
   }
@@ -44,12 +67,17 @@ async function loadSession(send) {
 }
 
 async function saveSession(context, send) {
-  if (!settings.SESSION_BUCKET) return;
   try {
     const state = await context.storageState();
-    const file = getStorageClient().bucket(settings.SESSION_BUCKET).file(settings.SESSION_OBJECT);
-    await file.save(JSON.stringify(state), { contentType: 'application/json' });
-    log(send, 'session.save', 'Saved session to Cloud Storage for future runs.');
+    if (settings.SESSION_BUCKET) {
+      const file = getStorageClient().bucket(settings.SESSION_BUCKET).file(settings.SESSION_OBJECT);
+      await file.save(JSON.stringify(state), { contentType: 'application/json' });
+      log(send, 'session.save', 'Saved session to Cloud Storage for future runs.');
+    } else {
+      const localPath = path.join(PROJECT_ROOT, settings.SESSION_OBJECT || 'flipkart-session.json');
+      fs.writeFileSync(localPath, JSON.stringify(state, null, 2), 'utf8');
+      log(send, 'session.save', `Saved session to local file (${path.basename(localPath)}) for future runs.`);
+    }
   } catch (err) {
     warn(send, 'session.save', `Could not save session (${err.message}) — next run will log in fresh.`);
   }

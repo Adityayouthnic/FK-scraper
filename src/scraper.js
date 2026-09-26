@@ -6,86 +6,20 @@ const { navigateToWallet, selectDate, downloadWalletReport } = require('./wallet
 const { getPresentDates, missingDatesInWindow, pushToSheet } = require('./sheets');
 const { log, warn } = require('./utils');
 const { dateKey, formatDMonY, todayIST, addDays } = require('./dateUtil');
-
-const VIEWPORT = { width: settings.VIEWPORT_WIDTH, height: settings.VIEWPORT_HEIGHT };
-
-// Tracks the single in-flight Playwright page, if any, so incoming input
-// events (mouse/keyboard from the live view) can be relayed to it. There is
-// at most one active run at a time (enforced in server.js).
-let activePage = null;
-let activeRun = null;
-
-class RunCancelledError extends Error {
-  constructor() {
-    super('Run cancelled by user.');
-    this.code = 'RUN_CANCELLED';
-  }
-}
-
-function cancelActiveRun() {
-  if (!activeRun) return false;
-
-  activeRun.cancelled = true;
-  activeRun.rejectCancel(new RunCancelledError());
-  if (activeRun.browser) {
-    activeRun.browser.close().catch(() => {});
-  }
-  return true;
-}
-
-function awaitCancellable(run, operation, onLateResolve) {
-  const pending = Promise.resolve(operation);
-  pending.then((value) => {
-    // If cancellation won while a setup operation was still starting, clean
-    // up anything that finished after the run had already been released.
-    if (run.cancelled && onLateResolve) onLateResolve(value);
-  }, () => {});
-  return Promise.race([pending, run.cancelPromise]);
-}
-
-async function dispatchInput(evt) {
-  if (!activePage) return;
-  try {
-    switch (evt.event) {
-      case 'mousemove':
-        await activePage.mouse.move(evt.x, evt.y);
-        break;
-      case 'mousedown':
-        await activePage.mouse.move(evt.x, evt.y);
-        await activePage.mouse.down({ button: evt.button || 'left' });
-        break;
-      case 'mouseup':
-        await activePage.mouse.up({ button: evt.button || 'left' });
-        break;
-      case 'wheel':
-        await activePage.mouse.wheel(evt.deltaX || 0, evt.deltaY || 0);
-        break;
-      case 'keydown':
-        await activePage.keyboard.down(evt.key);
-        break;
-      case 'keyup':
-        await activePage.keyboard.up(evt.key);
-        break;
-      default:
-        break;
-    }
-  } catch {
-    // Page may be mid-navigation when an input event arrives; drop it.
-  }
-}
+const {
+  RunCancelledError,
+  cancelActiveRun,
+  dispatchInput,
+  awaitCancellable,
+  createRunContext,
+  setupScreencast,
+  setActivePage,
+  clearActivePage,
+  clearActiveRun,
+} = require('./runner');
 
 async function runScrapeJob(send) {
-  const run = {
-    browser: null,
-    cancelled: false,
-    rejectCancel: null,
-    resolveCancel: null,
-  };
-  run.cancelPromise = new Promise((resolve, reject) => {
-    run.resolveCancel = resolve;
-    run.rejectCancel = reject;
-  });
-  activeRun = run;
+  const run = createRunContext('wallet');
 
   let browser = null;
   let context = null;
@@ -102,28 +36,9 @@ async function runScrapeJob(send) {
     run.browser = browser;
 
     page = await awaitCancellable(run, context.newPage(), (latePage) => latePage?.close().catch(() => {}));
-    activePage = page;
+    setActivePage(page);
 
-    client = await awaitCancellable(run, context.newCDPSession(page));
-    await awaitCancellable(run, client.send('Page.startScreencast', {
-      format: 'jpeg',
-      quality: 85,
-      maxWidth: VIEWPORT.width,
-      maxHeight: VIEWPORT.height,
-      everyNthFrame: 1,
-    }));
-    client.on('Page.screencastFrame', async ({ data, sessionId, metadata }) => {
-      send('frame', {
-        data,
-        viewportWidth: metadata?.deviceWidth || VIEWPORT.width,
-        viewportHeight: metadata?.deviceHeight || VIEWPORT.height,
-      });
-      try {
-        await client.send('Page.screencastFrameAck', { sessionId });
-      } catch {
-        // WS/browser may already be closing; safe to ignore.
-      }
-    });
+    client = await setupScreencast(run, context, page, send);
 
     let loggedIn = false;
 
@@ -184,13 +99,13 @@ async function runScrapeJob(send) {
     try {
       if (client) await client.send('Page.stopScreencast');
     } catch {}
-    if (activePage === page) activePage = null;
+    clearActivePage(page);
     try {
       if (browser) await browser.close();
     } catch {}
     run.resolveCancel();
-    if (activeRun === run) activeRun = null;
+    clearActiveRun(run);
   }
 }
 
-module.exports = { runScrapeJob, dispatchInput, cancelActiveRun };
+module.exports = { runScrapeJob, dispatchInput, cancelActiveRun, RunCancelledError };

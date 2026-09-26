@@ -7,10 +7,12 @@ const liveBadge = document.getElementById('live-badge');
 const log = document.getElementById('log');
 const statStatus = document.getElementById('stat-status');
 const statLastRun = document.getElementById('stat-last-run');
+const statRowsAdded = document.getElementById('stat-rows-added');
 const statLastResult = document.getElementById('stat-last-result');
+const verticalSelect = document.getElementById('vertical-select');
+const pagesInput = document.getElementById('pages-input');
 const runBtnLabel = runBtn.querySelector('span');
 
-// Must match VIEWPORT in src/scraper.js.
 const VIEWPORT_WIDTH = 1024;
 const VIEWPORT_HEIGHT = 768;
 
@@ -37,8 +39,8 @@ function appendLog(message, kind) {
 
 function classifyLog(message) {
   const lower = message.toLowerCase();
-  if (lower.startsWith('error')) return 'error';
-  if (lower.includes('detected') || lower.includes('complete')) return 'done';
+  if (lower.startsWith('error') || lower.includes('failed') || lower.includes('critical')) return 'error';
+  if (lower.includes('detected') || lower.includes('complete') || lower.includes('done') || lower.includes('pushed')) return 'done';
   return 'info';
 }
 
@@ -57,10 +59,15 @@ function setStatus(state) {
   if (!isRunning) {
     liveView.style.display = 'none';
     viewPlaceholder.style.display = 'flex';
+    verticalSelect.disabled = false;
+    pagesInput.disabled = false;
+  } else {
+    verticalSelect.disabled = true;
+    pagesInput.disabled = true;
   }
 }
 
-ws.addEventListener('open', () => appendLog('Connected to server.'));
+ws.addEventListener('open', () => appendLog('Connected to server. Ready to scrape Search Trends.'));
 ws.addEventListener('close', () => appendLog('Disconnected from server.', 'error'));
 
 ws.addEventListener('message', (event) => {
@@ -82,9 +89,10 @@ ws.addEventListener('message', (event) => {
       setStatus(msg.state);
       break;
     case 'done':
-      appendLog(`Done. ${msg.datesProcessed || 0} date(s) processed, ${msg.rowsAdded} row(s) added.`, 'done');
+      appendLog(`Done. ${msg.verticalsProcessed || 1} vertical(s) processed, ${msg.rowsAdded || 0} row(s) added to Google Sheets.`, 'done');
       statLastRun.textContent = new Date().toLocaleTimeString();
       statLastResult.textContent = 'Success';
+      statRowsAdded.textContent = msg.rowsAdded || 0;
       break;
     case 'cancelled':
       appendLog(msg.message || 'Run cancelled.', 'info');
@@ -112,12 +120,20 @@ runBtn.addEventListener('click', () => {
     return;
   }
   log.textContent = '';
-  ws.send(JSON.stringify({ type: 'run', job: 'wallet', token }));
+  const selectedVertical = verticalSelect.value;
+  const pages = parseInt(pagesInput.value, 10) || 10;
+  ws.send(JSON.stringify({
+    type: 'run',
+    job: 'trends',
+    options: {
+      vertical: selectedVertical,
+      pages,
+    },
+    token,
+  }));
 });
 
 // --- Relay mouse/keyboard into the remote browser via the live view ---
-// so you can solve a captcha or click Login when the run pauses for it.
-
 function sendInput(payload) {
   if (!isRunning || ws.readyState !== WebSocket.OPEN) return;
   ws.send(JSON.stringify({ type: 'input', ...payload }));
@@ -131,9 +147,6 @@ function toViewportCoords(e) {
   );
   if (!Number.isFinite(scale) || scale <= 0) return null;
 
-  // The image uses object-fit: contain, so a responsive panel can add
-  // letterboxing on either axis. Remove that padding before mapping the
-  // pointer back to the Playwright viewport.
   const contentWidth = remoteViewport.width * scale;
   const contentHeight = remoteViewport.height * scale;
   const offsetX = (rect.width - contentWidth) / 2;
@@ -183,12 +196,15 @@ liveView.addEventListener('wheel', (e) => {
 
 window.addEventListener('keydown', (e) => {
   if (!isRunning) return;
+  // Don't intercept typing when the user is editing the pages input or select
+  if (document.activeElement === pagesInput || document.activeElement === verticalSelect) return;
   e.preventDefault();
   sendInput({ event: 'keydown', key: e.key });
 });
 
 window.addEventListener('keyup', (e) => {
   if (!isRunning) return;
+  if (document.activeElement === pagesInput || document.activeElement === verticalSelect) return;
   e.preventDefault();
   sendInput({ event: 'keyup', key: e.key });
 });

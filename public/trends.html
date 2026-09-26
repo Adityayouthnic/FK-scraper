@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Wallet Scraper</title>
+<title>Search Trends Scraper</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;600&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@450;600&display=swap" rel="stylesheet" />
@@ -45,8 +45,8 @@
   <aside class="sidebar-slim">
     <span class="brand-mark">FK</span>
     <nav class="sidebar-slim-nav">
-      <a class="slim-link active" href="/" title="Wallet Scraper"><svg class="icon"><use href="#icon-wallet"/></svg></a>
-      <a class="slim-link" href="/trends" title="Search Trends"><svg class="icon"><use href="#icon-trending"/></svg></a>
+      <a class="slim-link" href="/" title="Wallet Scraper"><svg class="icon"><use href="#icon-wallet"/></svg></a>
+      <a class="slim-link active" href="/trends" title="Search Trends"><svg class="icon"><use href="#icon-trending"/></svg></a>
     </nav>
     <div class="sidebar-slim-footer">
       <a class="slim-link" href="#" title="Settings"><svg class="icon"><use href="#icon-settings"/></svg></a>
@@ -56,15 +56,31 @@
   <div class="app-shell">
     <header class="topbar">
       <div class="topbar-left">
-        <span class="topbar-title">Wallet Scraper</span>
+        <span class="topbar-title">Search Trends</span>
         <span class="topbar-sep">/</span>
-        <span class="topbar-subtitle">Flipkart Seller &middot; Ads Wallet</span>
+        <span class="topbar-subtitle">Flipkart Seller &middot; NXT Insights</span>
         <div id="status-pill" class="status-pill status-idle">
           <span class="status-dot"></span>
           <span id="status-text">Idle</span>
         </div>
       </div>
       <div class="topbar-right">
+        <div class="header-controls">
+          <div class="control-group">
+            <label for="vertical-select" class="header-stat-label">Vertical</label>
+            <select id="vertical-select" class="header-select">
+              <option value="all">All Verticals (Default)</option>
+              <option value="women_ethnic_set">Women Ethnic Set</option>
+              <option value="women_sari">Women Sari</option>
+              <option value="Women_Kurta_And_Kurti">Women Kurta And Kurti</option>
+            </select>
+          </div>
+          <div class="control-group">
+            <label for="pages-input" class="header-stat-label">Pages</label>
+            <input id="pages-input" class="header-input" type="number" min="1" max="50" value="10" title="Pages to scrape per vertical (50 rows/page)" />
+          </div>
+        </div>
+        <div class="header-divider"></div>
         <div class="header-stats">
           <div class="header-stat">
             <span class="header-stat-label">Status</span>
@@ -74,6 +90,11 @@
           <div class="header-stat">
             <span class="header-stat-label">Last Run</span>
             <span class="header-stat-value" id="stat-last-run">&mdash;</span>
+          </div>
+          <div class="header-divider"></div>
+          <div class="header-stat">
+            <span class="header-stat-label">Rows Added</span>
+            <span class="header-stat-value" id="stat-rows-added">&mdash;</span>
           </div>
           <div class="header-divider"></div>
           <div class="header-stat">
@@ -114,6 +135,6 @@
     </main>
   </div>
 
-  <script src="/app.js"></script>
+  <script src="/trends.js"></script>
 </body>
 </html>

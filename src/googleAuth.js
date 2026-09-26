@@ -72,4 +72,22 @@ function loadServiceAccountCredentials() {
   return parsed;
 }
 
-module.exports = { loadServiceAccountCredentials };
+let sheetsClientPromise = null;
+function getSheetsClient() {
+  if (!sheetsClientPromise) {
+    const { google } = require('googleapis');
+    sheetsClientPromise = (async () => {
+      const credentials = loadServiceAccountCredentials();
+      const auth = new google.auth.GoogleAuth({
+        credentials,
+        scopes: ['https://www.googleapis.com/auth/spreadsheets'],
+      });
+      const client = await auth.getClient();
+      return google.sheets({ version: 'v4', auth: client });
+    })();
+  }
+  return sheetsClientPromise;
+}
+
+module.exports = { loadServiceAccountCredentials, getSheetsClient };
+

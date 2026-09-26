@@ -24,6 +24,13 @@ const settings = {
   SESSION_BUCKET: process.env.SESSION_BUCKET || '',
   SESSION_OBJECT: process.env.SESSION_OBJECT || 'flipkart-session.json',
 
+  // Search Trends settings
+  TRENDS_SPREADSHEET_ID: process.env.TRENDS_SHEET_ID || process.env.SPREADSHEET_ID || '1eNU-93aV5YLxAjtImJhIoTXWeBrWkBYLDbWewLgwk3M',
+  TRENDS_SHEET_NAME: process.env.TRENDS_SHEET_NAME || 'Search_Trends',
+  TRENDS_PAGES_PER_VERTICAL: int('TRENDS_PAGES_PER_VERTICAL', 10),
+  SELLER_INSIGHTS_URL: process.env.SELLER_INSIGHTS_URL ||
+    'https://seller.flipkart.com/index.html#dashboard/growth/seller-insights',
+
   HEADLESS: true,
   BROWSER_CHANNEL: process.env.BROWSER_CHANNEL || null,
   VIEWPORT_WIDTH: int('VIEWPORT_WIDTH', 1024),
