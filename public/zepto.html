@@ -1,0 +1,465 @@
+<!doctype html>
+<html lang="en" class="h-full bg-slate-50">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Zepto Portal &middot; Automation Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#eef2ff',
+              100: '#e0e7ff',
+              200: '#c7d2fe',
+              500: '#6366f1',
+              600: '#4f46e5',
+              700: '#4338ca',
+              800: '#3730a3',
+              900: '#312e81',
+            },
+            zepto: {
+              50: '#fdf4ff',
+              100: '#fae8ff',
+              200: '#f5d0fe',
+              500: '#d946ef',
+              600: '#c026d3',
+              700: '#a21caf',
+            }
+          },
+          fontFamily: {
+            sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
+            mono: ['"JetBrains Mono"', 'monospace'],
+          }
+        }
+      }
+    };
+  </script>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body class="h-full flex overflow-hidden text-slate-800 antialiased font-sans">
+
+  <!-- SVG Icon Library -->
+  <svg style="display:none" aria-hidden="true">
+    <symbol id="icon-wallet" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M3 7a2 2 0 0 1 2-2h13a1 1 0 0 1 1 1v2"/>
+      <path d="M3 7v10a2 2 0 0 0 2 2h14a1 1 0 0 0 1-1v-8a1 1 0 0 0-1-1H5a2 2 0 0 1-2-2z"/>
+      <circle cx="16" cy="14" r="1.5" fill="currentColor"/>
+    </symbol>
+    <symbol id="icon-trending" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/>
+      <polyline points="17 6 23 6 23 12"/>
+    </symbol>
+    <symbol id="icon-zepto" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+    </symbol>
+    <symbol id="icon-clock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="10"/>
+      <polyline points="12 6 12 12 16 14"/>
+    </symbol>
+    <symbol id="icon-play" viewBox="0 0 24 24" fill="currentColor">
+      <polygon points="6 4 20 12 6 20 6 4"/>
+    </symbol>
+    <symbol id="icon-stop" viewBox="0 0 24 24" fill="currentColor">
+      <rect x="6" y="6" width="12" height="12" rx="2"/>
+    </symbol>
+    <symbol id="icon-refresh" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+    </symbol>
+    <symbol id="icon-download" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+      <polyline points="7 10 12 15 17 10"/>
+      <line x1="12" y1="15" x2="12" y2="3"/>
+    </symbol>
+    <symbol id="icon-terminal" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="4 17 10 11 4 5"/>
+      <line x1="12" y1="19" x2="20" y2="19"/>
+    </symbol>
+    <symbol id="icon-clear" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+    </symbol>
+    <symbol id="icon-settings" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="3"/>
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+    </symbol>
+    <symbol id="icon-logout" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/>
+    </symbol>
+  </svg>
+
+  <!-- Categorized Sidebar Navigation Rail -->
+  <aside class="w-60 flex-shrink-0 bg-white border-r border-slate-200/80 flex flex-col z-20 shadow-[1px_0_3px_rgba(0,0,0,0.02)]">
+    <!-- Brand Header -->
+    <div class="h-16 flex items-center gap-3 px-5 border-b border-slate-100 flex-shrink-0">
+      <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-brand-600 to-indigo-500 text-white font-bold flex items-center justify-center shadow-md shadow-brand-500/20 text-sm">
+        FK
+      </div>
+      <div class="flex flex-col">
+        <span class="font-bold text-slate-900 text-sm tracking-tight leading-tight">Scraper Suite</span>
+        <span class="text-[10px] text-slate-400 font-medium">Multi-Platform Automation</span>
+      </div>
+    </div>
+
+    <!-- Navigation Groups -->
+    <div class="flex-1 overflow-y-auto px-3 py-4 space-y-5 custom-scrollbar text-xs">
+      
+      <!-- Category 1: FLIPKART -->
+      <div>
+        <div class="px-2.5 mb-2 flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-slate-400">
+          <span>Flipkart</span>
+          <span class="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-blue-50 text-blue-600 border border-blue-200/60">2 Tools</span>
+        </div>
+        <nav class="space-y-1">
+          <a href="/" class="flex items-center gap-2.5 px-3 py-2 rounded-xl text-slate-600 hover:text-brand-600 hover:bg-slate-50 transition-all font-medium">
+            <svg class="w-4 h-4 text-slate-400"><use href="#icon-wallet"/></svg>
+            <span>Ads Wallet (Daily)</span>
+          </a>
+          <a href="/trends" class="flex items-center gap-2.5 px-3 py-2 rounded-xl text-slate-600 hover:text-brand-600 hover:bg-slate-50 transition-all font-medium">
+            <svg class="w-4 h-4 text-slate-400"><use href="#icon-trending"/></svg>
+            <span>Search Trends (Weekly)</span>
+          </a>
+        </nav>
+      </div>
+
+      <!-- Category 2: ZEPTO -->
+      <div>
+        <div class="px-2.5 mb-2 flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-slate-400">
+          <span>Zepto</span>
+          <span class="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-fuchsia-50 text-fuchsia-600 border border-fuchsia-200/60">Active</span>
+        </div>
+        <nav class="space-y-1">
+          <a href="/zepto" class="flex items-center gap-2.5 px-3 py-2 rounded-xl bg-fuchsia-50 text-fuchsia-700 font-semibold shadow-sm transition-all">
+            <svg class="w-4 h-4 text-fuchsia-600"><use href="#icon-zepto"/></svg>
+            <span>Zepto Portal Scraper</span>
+          </a>
+        </nav>
+      </div>
+
+      <!-- Category 3: SYSTEM -->
+      <div>
+        <div class="px-2.5 mb-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+          <span>Management</span>
+        </div>
+        <nav class="space-y-1">
+          <button id="open-schedule-btn" type="button" class="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-slate-600 hover:text-brand-600 hover:bg-slate-50 transition-all font-medium text-left">
+            <svg class="w-4 h-4 text-slate-400"><use href="#icon-clock"/></svg>
+            <span>Auto-Run Schedules</span>
+          </button>
+          <a href="/settings" class="flex items-center gap-2.5 px-3 py-2 rounded-xl text-slate-600 hover:text-brand-600 hover:bg-slate-50 transition-all font-medium">
+            <svg class="w-4 h-4 text-slate-400"><use href="#icon-settings"/></svg>
+            <span>Settings &amp; Users</span>
+          </a>
+        </nav>
+      </div>
+
+    </div>
+
+    <!-- User / Session Footer -->
+    <div class="p-3 border-t border-slate-100 flex items-center justify-between bg-slate-50/50 flex-shrink-0">
+      <div class="flex items-center gap-2 min-w-0">
+        <div class="w-7 h-7 rounded-lg bg-fuchsia-50 text-fuchsia-700 font-bold flex items-center justify-center text-xs border border-fuchsia-200">
+          Z
+        </div>
+        <div class="flex flex-col min-w-0">
+          <span class="text-xs font-semibold text-slate-800 truncate" id="sidebar-user-name">Zepto Module</span>
+          <span class="text-[10px] text-slate-400 truncate">Protected Session</span>
+        </div>
+      </div>
+      <button id="logout-btn" type="button" class="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors" title="Sign Out">
+        <svg class="w-4 h-4"><use href="#icon-logout"/></svg>
+      </button>
+    </div>
+  </aside>
+
+  <!-- Main App Shell -->
+  <div class="flex-1 flex flex-col min-w-0 overflow-hidden">
+
+    <!-- Topbar Header -->
+    <header class="h-16 flex-shrink-0 bg-white border-b border-slate-200/80 px-6 flex items-center justify-between gap-4 z-10">
+      
+      <!-- Left: Title, Breadcrumb, Status Pill -->
+      <div class="flex items-center gap-3 min-w-0">
+        <div class="flex items-center gap-2">
+          <span class="font-bold text-slate-900 text-base tracking-tight">Zepto Auto Sale</span>
+          <span class="text-slate-300 font-normal">/</span>
+          <span class="text-xs font-medium text-slate-500 hidden sm:inline">Daily Sales &amp; FC Inventory Sync</span>
+        </div>
+
+        <!-- Engine Status Pill -->
+        <div id="status-pill" class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-600 border border-slate-200">
+          <span class="w-2 h-2 rounded-full bg-slate-400" id="status-dot"></span>
+          <span id="status-text">Idle</span>
+        </div>
+
+        <!-- Schedule Badge (Clickable) -->
+        <button id="schedule-badge" type="button" class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-fuchsia-50 text-fuchsia-700 border border-fuchsia-200/80 hover:bg-fuchsia-100 transition-colors" title="Click to view schedule">
+          <svg class="w-3.5 h-3.5"><use href="#icon-clock"/></svg>
+          <span id="schedule-badge-text">Auto: Daily 02:00 PM IST</span>
+        </button>
+      </div>
+
+      <!-- Right: Header Metrics -->
+      <div class="flex items-center gap-5 flex-shrink-0">
+        <div class="hidden xl:flex items-center gap-4 text-xs">
+          <div class="flex flex-col">
+            <span class="text-[10px] uppercase tracking-wider font-semibold text-slate-400">Status</span>
+            <span id="stat-status" class="font-semibold text-slate-700">Idle</span>
+          </div>
+          <div class="w-px h-6 bg-slate-200"></div>
+          <div class="flex flex-col">
+            <span class="text-[10px] uppercase tracking-wider font-semibold text-slate-400">Last Run</span>
+            <span id="stat-last-run" class="font-semibold text-slate-700">&mdash;</span>
+          </div>
+          <div class="w-px h-6 bg-slate-200"></div>
+          <div class="flex flex-col">
+            <span class="text-[10px] uppercase tracking-wider font-semibold text-slate-400">Result</span>
+            <span id="stat-last-result" class="font-semibold text-slate-700">&mdash;</span>
+          </div>
+        </div>
+
+        <!-- Run / Stop Button -->
+        <button id="run-btn" type="button" class="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-fuchsia-600 hover:bg-fuchsia-700 active:scale-[0.98] text-white text-xs font-bold uppercase tracking-wider shadow-sm transition-all focus:outline-none focus:ring-2 focus:ring-fuchsia-500 focus:ring-offset-2">
+          <svg class="w-4 h-4"><use href="#icon-play"/></svg>
+          <span>Run Daily Sync</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Workspace -->
+    <main class="flex-1 p-5 overflow-auto bg-slate-50/60 space-y-4">
+      
+      <!-- Action Control Deck -->
+      <div class="bg-white rounded-2xl border border-slate-200/90 shadow-sm p-4 space-y-4">
+        
+        <!-- Action Mode Tabs -->
+        <div class="flex items-center justify-between border-b border-slate-100 pb-3 flex-wrap gap-3">
+          <div class="flex items-center gap-1.5 p-1 bg-slate-100/80 rounded-xl" id="action-tabs">
+            <button type="button" data-action="daily" class="tab-btn px-3 py-1.5 rounded-lg text-xs font-semibold bg-white text-fuchsia-700 shadow-sm transition-all">
+              ⚡ Full Daily Sync
+            </button>
+            <button type="button" data-action="sales" class="tab-btn px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-600 hover:text-slate-900 transition-all">
+              📊 Sales Sync
+            </button>
+            <button type="button" data-action="inventory" class="tab-btn px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-600 hover:text-slate-900 transition-all">
+              📦 FC Inventory Refresh
+            </button>
+            <button type="button" data-action="download" class="tab-btn px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-600 hover:text-slate-900 transition-all">
+              📥 Custom Report Download
+            </button>
+            <button type="button" data-action="login" class="tab-btn px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-600 hover:text-slate-900 transition-all">
+              🔐 Session &amp; Login
+            </button>
+          </div>
+
+          <div class="flex items-center gap-4 text-xs text-slate-600">
+            <label class="inline-flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" id="opt-headed" class="rounded border-slate-300 text-fuchsia-600 focus:ring-fuchsia-500">
+              <span class="font-medium text-[11px]">Watch Browser Window</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- Dynamic Action Context Panels -->
+        <!-- 1. Daily Sync Panel -->
+        <div id="panel-daily" class="action-panel text-xs text-slate-600 flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            <div class="w-8 h-8 rounded-xl bg-fuchsia-50 text-fuchsia-600 flex items-center justify-center font-bold">
+              ⚡
+            </div>
+            <div>
+              <p class="font-semibold text-slate-900">Stage 1: Sales_F Gap Fill &rarr; Stage 2: Vendor Inventory_F Snapshot</p>
+              <p class="text-[11px] text-slate-500">Reads Google Sheets for missing dates, downloads reports in memory, and pushes directly to tabs.</p>
+            </div>
+          </div>
+          <span class="text-[11px] text-slate-400">Scheduled: 14:00 IST daily</span>
+        </div>
+
+        <!-- 2. Sales Sync Panel -->
+        <div id="panel-sales" class="action-panel hidden text-xs space-y-3">
+          <div class="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+            <div>
+              <label for="sales-days" class="block text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Gap Check Window</label>
+              <input type="number" id="sales-days" value="10" min="1" max="60" class="mt-1 block w-full rounded-xl border border-slate-200 px-3 py-1.5 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-fuchsia-500" />
+            </div>
+            <div>
+              <label for="sales-from" class="block text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Custom From (mm/dd/yyyy)</label>
+              <input type="text" id="sales-from" placeholder="Auto (missing dates)" class="mt-1 block w-full rounded-xl border border-slate-200 px-3 py-1.5 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-fuchsia-500" />
+            </div>
+            <div>
+              <label for="sales-to" class="block text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Custom To (mm/dd/yyyy)</label>
+              <input type="text" id="sales-to" placeholder="Auto (yesterday)" class="mt-1 block w-full rounded-xl border border-slate-200 px-3 py-1.5 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-fuchsia-500" />
+            </div>
+            <div class="flex items-center gap-2 pb-1.5">
+              <input type="checkbox" id="sales-dryrun" class="rounded border-slate-300 text-fuchsia-600 focus:ring-fuchsia-500">
+              <label for="sales-dryrun" class="text-xs font-semibold text-slate-700 cursor-pointer">Dry-Run (Preview only)</label>
+            </div>
+          </div>
+        </div>
+
+        <!-- 3. FC Inventory Panel -->
+        <div id="panel-inventory" class="action-panel hidden text-xs space-y-3">
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+            <div>
+              <label for="inv-date" class="block text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Snapshot Date (dd-mmm-yyyy)</label>
+              <input type="text" id="inv-date" placeholder="Today" class="mt-1 block w-full rounded-xl border border-slate-200 px-3 py-1.5 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-fuchsia-500" />
+            </div>
+            <div class="flex items-center gap-2 pb-1.5">
+              <input type="checkbox" id="inv-dryrun" class="rounded border-slate-300 text-fuchsia-600 focus:ring-fuchsia-500">
+              <label for="inv-dryrun" class="text-xs font-semibold text-slate-700 cursor-pointer">Dry-Run (Do not overwrite tab)</label>
+            </div>
+            <div class="text-[11px] text-slate-500 pb-1.5">
+              Replaces rows in <code class="bg-slate-100 px-1 py-0.5 rounded text-fuchsia-700 font-mono">FC Inventory In Zepto</code> with current stock.
+            </div>
+          </div>
+        </div>
+
+        <!-- 4. Download Report Panel -->
+        <div id="panel-download" class="action-panel hidden text-xs space-y-3">
+          <div class="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+            <div>
+              <label for="report-type" class="block text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Report Type</label>
+              <select id="report-type" class="mt-1 block w-full rounded-xl border border-slate-200 px-3 py-1.5 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-fuchsia-500">
+                <option value="Sales_F">Sales_F (Daily Sales)</option>
+                <option value="Vendor Inventory_F">Vendor Inventory_F (Stock Snapshot)</option>
+                <option value="Fill Rate">Fill Rate</option>
+                <option value="DEQ Inventory">DEQ Inventory</option>
+                <option value="OOS Visibility">OOS Visibility</option>
+                <option value="OTIF">OTIF</option>
+                <option value="Catalogue">Catalogue</option>
+                <option value="ODR">ODR</option>
+                <option value="RTV">RTV</option>
+                <option value="ODR_Discrepancy at IB">ODR_Discrepancy at IB</option>
+                <option value="GRN">GRN</option>
+                <option value="MSL">MSL</option>
+                <option value="Recon Sales Ledger_F">Recon Sales Ledger_F</option>
+                <option value="Recon Sales Ledger_F Summary">Recon Sales Ledger_F Summary</option>
+                <option value="DN CN Summary_F">DN CN Summary_F</option>
+              </select>
+            </div>
+            <div>
+              <label for="rep-from" class="block text-[11px] font-semibold text-slate-500 uppercase tracking-wide">From (mm/dd/yyyy)</label>
+              <input type="text" id="rep-from" placeholder="mm/dd/yyyy" class="mt-1 block w-full rounded-xl border border-slate-200 px-3 py-1.5 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-fuchsia-500" />
+            </div>
+            <div>
+              <label for="rep-to" class="block text-[11px] font-semibold text-slate-500 uppercase tracking-wide">To (mm/dd/yyyy)</label>
+              <input type="text" id="rep-to" placeholder="mm/dd/yyyy" class="mt-1 block w-full rounded-xl border border-slate-200 px-3 py-1.5 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-fuchsia-500" />
+            </div>
+            <div class="flex items-center gap-2 pb-1.5">
+              <input type="checkbox" id="rep-force" class="rounded border-slate-300 text-fuchsia-600 focus:ring-fuchsia-500">
+              <label for="rep-force" class="text-xs font-semibold text-slate-700 cursor-pointer">Force fresh report</label>
+            </div>
+          </div>
+        </div>
+
+        <!-- 5. Login / Session Panel -->
+        <div id="panel-login" class="action-panel hidden text-xs flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            <div class="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
+              🔐
+            </div>
+            <div>
+              <p class="font-semibold text-slate-900">Unattended IMAP OTP Authentication</p>
+              <p class="text-[11px] text-slate-500">Uses ZEPTO_EMAIL &amp; ZEPTO_PASSWORD, fetches live OTP code from IMAP mailbox, and validates dashboard.</p>
+            </div>
+          </div>
+          <div class="flex items-center gap-3">
+            <label class="inline-flex items-center gap-1.5 cursor-pointer">
+              <input type="radio" name="login-mode" value="auto" checked class="text-fuchsia-600 focus:ring-fuchsia-500">
+              <span class="text-xs">Unattended Auto-Login</span>
+            </label>
+            <label class="inline-flex items-center gap-1.5 cursor-pointer">
+              <input type="radio" name="login-mode" value="setup" class="text-fuchsia-600 focus:ring-fuchsia-500">
+              <span class="text-xs">Interactive Setup Mode</span>
+            </label>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Split Grid: Live View (7 cols) + Terminal (5 cols) -->
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-5 h-[calc(100vh-270px)] min-h-[520px]">
+
+        <!-- Left: Live Browser Session (7 Cols) -->
+        <section class="lg:col-span-7 flex flex-col bg-white rounded-2xl border border-slate-200/90 shadow-sm overflow-hidden min-h-[460px]">
+          <div class="h-10 px-4 bg-slate-50/90 border-b border-slate-200 flex items-center justify-between flex-shrink-0">
+            <div class="flex items-center gap-2">
+              <div class="flex gap-1.5">
+                <span class="w-2.5 h-2.5 rounded-full bg-rose-400/90"></span>
+                <span class="w-2.5 h-2.5 rounded-full bg-amber-400/90"></span>
+                <span class="w-2.5 h-2.5 rounded-full bg-emerald-400/90"></span>
+              </div>
+              <span class="ml-2 text-xs font-semibold text-slate-600">Zepto Supplier Session &amp; Snapshots</span>
+            </div>
+
+            <div id="live-badge" class="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-slate-400">
+              <span class="relative flex h-2 w-2">
+                <span class="live-ping absolute inline-flex h-full w-full rounded-full bg-slate-300 opacity-75"></span>
+                <span class="relative inline-flex rounded-full h-2 w-2 bg-slate-400"></span>
+              </span>
+              <span>Standby</span>
+            </div>
+          </div>
+
+          <!-- Live View Canvas / Interactive Stream -->
+          <div class="relative flex-1 flex items-center justify-center overflow-hidden canvas-grid-pattern p-3 text-center">
+            <img id="live-view" alt="Interactive live browser viewport" draggable="false" style="display:none; max-width:100%; max-height:100%; object-fit:contain; border-radius:8px; box-shadow:0 4px 12px rgba(0,0,0,0.1);" />
+            
+            <div id="view-placeholder" class="flex flex-col items-center justify-center p-6 text-center max-w-sm">
+              <div class="w-14 h-14 rounded-2xl bg-fuchsia-50 flex items-center justify-center text-fuchsia-600 mb-4 shadow-sm border border-fuchsia-100">
+                <svg class="w-7 h-7"><use href="#icon-zepto"/></svg>
+              </div>
+              <h4 class="text-sm font-semibold text-slate-800 mb-1">Zepto Portal Live View</h4>
+              <p class="text-xs text-slate-500 leading-relaxed">
+                Click Run to launch the Zepto automation engine. Visual frames and portal screenshots appear here in real-time.
+              </p>
+            </div>
+          </div>
+
+          <!-- Panel Footer Status Bar -->
+          <div class="h-8 px-4 bg-slate-50 border-t border-slate-200/80 flex items-center justify-between text-[11px] text-slate-500">
+            <span>Engine: Python 3.12 &middot; Playwright Automation</span>
+            <span class="text-slate-400" id="live-source-hint">Portal: brands.zepto.co.in</span>
+          </div>
+        </section>
+
+        <!-- Right: Terminal Activity Log (5 Cols) -->
+        <section class="lg:col-span-5 flex flex-col bg-slate-950 rounded-2xl border border-slate-900 shadow-sm overflow-hidden min-h-[460px]">
+          <div class="h-10 px-4 bg-slate-900/90 border-b border-slate-800/80 flex items-center justify-between flex-shrink-0">
+            <div class="flex items-center gap-2 text-slate-300 text-xs font-semibold">
+              <svg class="w-4 h-4 text-fuchsia-500"><use href="#icon-terminal"/></svg>
+              <span>Zepto Engine Terminal</span>
+            </div>
+            <button id="clear-log-btn" type="button" class="text-slate-400 hover:text-slate-200 transition-colors p-1 rounded hover:bg-slate-800 text-xs flex items-center gap-1" title="Clear Terminal Log">
+              <svg class="w-3.5 h-3.5"><use href="#icon-clear"/></svg>
+              <span class="text-[11px]">Clear</span>
+            </button>
+          </div>
+
+          <!-- Terminal Content Area -->
+          <div class="flex-1 p-4 overflow-y-auto custom-scrollbar font-mono text-xs text-slate-300" id="log-container">
+            <pre id="log" class="whitespace-pre-wrap font-mono"></pre>
+            <span class="log-cursor"></span>
+          </div>
+
+          <!-- Terminal Footer -->
+          <div class="h-8 px-4 bg-slate-900/70 border-t border-slate-800/70 flex items-center justify-between text-[11px] text-slate-500">
+            <span>Zepto Auto Sale Suite &middot; Asia/Kolkata</span>
+            <span class="text-emerald-400 flex items-center gap-1">
+              <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> WebSocket Live
+            </span>
+          </div>
+        </section>
+
+      </div>
+    </main>
+  </div>
+
+  <script src="/schedule-modal.js"></script>
+  <script src="/zepto.js"></script>
+</body>
+</html>

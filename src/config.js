@@ -60,6 +60,7 @@ const settings = {
   ENABLE_AUTO_SCHEDULE: process.env.ENABLE_AUTO_SCHEDULE !== 'false',
   WALLET_CRON_SCHEDULE: process.env.WALLET_CRON_SCHEDULE || '0 7 * * *', // Daily 7:00 AM IST
   TRENDS_CRON_SCHEDULE: process.env.TRENDS_CRON_SCHEDULE || '0 8 * * 1', // Mondays 8:00 AM IST
+  ZEPTO_CRON_SCHEDULE: process.env.ZEPTO_CRON_SCHEDULE || '0 14 * * *',  // Daily 2:00 PM (14:00) IST
   CRON_TIMEZONE: process.env.CRON_TIMEZONE || 'Asia/Kolkata',
   ALERT_WEBHOOK_URL: process.env.ALERT_WEBHOOK_URL || '',
 };

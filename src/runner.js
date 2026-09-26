@@ -46,6 +46,16 @@ function cancelActiveRun() {
   if (!activeRun) return false;
 
   activeRun.cancelled = true;
+  if (activeRun.process) {
+    try {
+      if (process.platform === 'win32') {
+        const { execSync } = require('child_process');
+        execSync(`taskkill /pid ${activeRun.process.pid} /T /F`);
+      } else {
+        activeRun.process.kill('SIGKILL');
+      }
+    } catch {}
+  }
   if (activeRun.rejectCancel) {
     activeRun.rejectCancel(new RunCancelledError());
   }

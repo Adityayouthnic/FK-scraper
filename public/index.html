@@ -76,6 +76,9 @@
     <symbol id="icon-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <polyline points="20 6 9 17 4 12"/>
     </symbol>
+    <symbol id="icon-zepto" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+    </symbol>
     <symbol id="icon-settings" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <circle cx="12" cy="12" r="3"/>
       <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
@@ -85,61 +88,86 @@
     </symbol>
   </svg>
 
-  <!-- Slim Sidebar Navigation Rail -->
-  <aside class="w-16 flex-shrink-0 bg-white border-r border-slate-200/80 flex flex-col items-center py-4 z-20 shadow-[1px_0_3px_rgba(0,0,0,0.02)]">
-    <!-- Brand Mark -->
-    <a href="/" class="w-10 h-10 rounded-xl bg-gradient-to-tr from-brand-600 to-indigo-500 text-white font-bold flex items-center justify-center shadow-md shadow-brand-500/20 mb-8 transition-transform hover:scale-105" title="Flipkart Scraper Suite">
-      FK
-    </a>
+  <!-- Categorized Sidebar Navigation Rail -->
+  <aside class="w-60 flex-shrink-0 bg-white border-r border-slate-200/80 flex flex-col z-20 shadow-[1px_0_3px_rgba(0,0,0,0.02)]">
+    <!-- Brand Header -->
+    <div class="h-16 flex items-center gap-3 px-5 border-b border-slate-100 flex-shrink-0">
+      <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-brand-600 to-indigo-500 text-white font-bold flex items-center justify-center shadow-md shadow-brand-500/20 text-sm">
+        FK
+      </div>
+      <div class="flex flex-col">
+        <span class="font-bold text-slate-900 text-sm tracking-tight leading-tight">Scraper Suite</span>
+        <span class="text-[10px] text-slate-400 font-medium">Multi-Platform Automation</span>
+      </div>
+    </div>
 
-    <!-- Nav Items -->
-    <nav class="flex flex-col gap-3 w-full px-2">
-      <a href="/" class="relative group flex items-center justify-center w-12 h-12 rounded-xl bg-brand-50 text-brand-600 shadow-sm transition-all" title="Wallet Scraper (Daily)">
-        <svg class="w-5 h-5"><use href="#icon-wallet"/></svg>
-        <span class="absolute left-16 bg-slate-900 text-white text-xs px-2.5 py-1 rounded-md opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity whitespace-nowrap shadow-lg z-50">
-          Wallet Scraper
-        </span>
-      </a>
+    <!-- Navigation Groups -->
+    <div class="flex-1 overflow-y-auto px-3 py-4 space-y-5 custom-scrollbar text-xs">
+      
+      <!-- Category 1: FLIPKART -->
+      <div>
+        <div class="px-2.5 mb-2 flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-slate-400">
+          <span>Flipkart</span>
+          <span class="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-blue-50 text-blue-600 border border-blue-200/60">2 Tools</span>
+        </div>
+        <nav class="space-y-1">
+          <a href="/" class="flex items-center gap-2.5 px-3 py-2 rounded-xl bg-brand-50 text-brand-600 font-semibold shadow-sm transition-all">
+            <svg class="w-4 h-4"><use href="#icon-wallet"/></svg>
+            <span>Ads Wallet (Daily)</span>
+          </a>
+          <a href="/trends" class="flex items-center gap-2.5 px-3 py-2 rounded-xl text-slate-600 hover:text-brand-600 hover:bg-slate-50 transition-all font-medium">
+            <svg class="w-4 h-4 text-slate-400"><use href="#icon-trending"/></svg>
+            <span>Search Trends (Weekly)</span>
+          </a>
+        </nav>
+      </div>
 
-      <a href="/trends" class="relative group flex items-center justify-center w-12 h-12 rounded-xl text-slate-400 hover:text-brand-600 hover:bg-slate-50 transition-all" title="Search Trends (Weekly)">
-        <svg class="w-5 h-5"><use href="#icon-trending"/></svg>
-        <span class="absolute left-16 bg-slate-900 text-white text-xs px-2.5 py-1 rounded-md opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity whitespace-nowrap shadow-lg z-50">
-          Search Trends
-        </span>
-      </a>
+      <!-- Category 2: ZEPTO -->
+      <div>
+        <div class="px-2.5 mb-2 flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-slate-400">
+          <span>Zepto</span>
+          <span class="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-fuchsia-50 text-fuchsia-600 border border-fuchsia-200/60">Active</span>
+        </div>
+        <nav class="space-y-1">
+          <a href="/zepto" class="flex items-center gap-2.5 px-3 py-2 rounded-xl text-slate-600 hover:text-fuchsia-600 hover:bg-fuchsia-50/50 transition-all font-medium">
+            <svg class="w-4 h-4 text-fuchsia-500"><use href="#icon-zepto"/></svg>
+            <span>Zepto Portal Scraper</span>
+          </a>
+        </nav>
+      </div>
 
-      <a href="/settings" class="relative group flex items-center justify-center w-12 h-12 rounded-xl text-slate-400 hover:text-brand-600 hover:bg-slate-50 transition-all" title="Settings &amp; Users">
-        <svg class="w-5 h-5"><use href="#icon-settings"/></svg>
-        <span class="absolute left-16 bg-slate-900 text-white text-xs px-2.5 py-1 rounded-md opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity whitespace-nowrap shadow-lg z-50">
-          Settings &amp; Users
-        </span>
-      </a>
-    </nav>
+      <!-- Category 3: SYSTEM -->
+      <div>
+        <div class="px-2.5 mb-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+          <span>Management</span>
+        </div>
+        <nav class="space-y-1">
+          <button id="open-schedule-btn" type="button" class="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-slate-600 hover:text-brand-600 hover:bg-slate-50 transition-all font-medium text-left">
+            <svg class="w-4 h-4 text-slate-400"><use href="#icon-clock"/></svg>
+            <span>Auto-Run Schedules</span>
+          </button>
+          <a href="/settings" class="flex items-center gap-2.5 px-3 py-2 rounded-xl text-slate-600 hover:text-brand-600 hover:bg-slate-50 transition-all font-medium">
+            <svg class="w-4 h-4 text-slate-400"><use href="#icon-settings"/></svg>
+            <span>Settings &amp; Users</span>
+          </a>
+        </nav>
+      </div>
 
-    <!-- Footer Controls -->
-    <div class="mt-auto flex flex-col gap-3 w-full px-2">
-      <!-- Schedule Settings Trigger -->
-      <button id="open-schedule-btn" type="button" class="relative group flex items-center justify-center w-12 h-12 rounded-xl text-slate-400 hover:text-brand-600 hover:bg-slate-50 transition-all" title="Schedule Settings">
-        <svg class="w-5 h-5"><use href="#icon-clock"/></svg>
-        <span class="absolute left-16 bg-slate-900 text-white text-xs px-2.5 py-1 rounded-md opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity whitespace-nowrap shadow-lg z-50">
-          Schedule Settings
-        </span>
-      </button>
+    </div>
 
-      <!-- Reset Session Trigger -->
-      <button id="reset-session-btn" type="button" class="relative group flex items-center justify-center w-12 h-12 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-all" title="Reset Browser Session">
-        <svg class="w-5 h-5"><use href="#icon-refresh"/></svg>
-        <span class="absolute left-16 bg-slate-900 text-white text-xs px-2.5 py-1 rounded-md opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity whitespace-nowrap shadow-lg z-50">
-          Reset Live Session
-        </span>
-      </button>
-
-      <!-- Logout Trigger -->
-      <button id="logout-btn" type="button" class="relative group flex items-center justify-center w-12 h-12 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-all" title="Sign Out">
-        <svg class="w-5 h-5"><use href="#icon-logout"/></svg>
-        <span class="absolute left-16 bg-slate-900 text-white text-xs px-2.5 py-1 rounded-md opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity whitespace-nowrap shadow-lg z-50">
-          Sign Out
-        </span>
+    <!-- User / Session Footer -->
+    <div class="p-3 border-t border-slate-100 flex items-center justify-between bg-slate-50/50 flex-shrink-0">
+      <div class="flex items-center gap-2 min-w-0">
+        <div class="w-7 h-7 rounded-lg bg-brand-50 text-brand-600 font-bold flex items-center justify-center text-xs border border-brand-200">
+          FK
+        </div>
+        <div class="flex flex-col min-w-0">
+          <span class="text-xs font-semibold text-slate-800 truncate">Wallet Scraper</span>
+          <span class="text-[10px] text-slate-400 truncate">Protected Session</span>
+        </div>
+      </div>
+      <button id="logout-btn" type="button" class="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors" title="Sign Out">
+        <svg class="w-4 h-4"><use href="#icon-logout"/></svg>
       </button>
     </div>
   </aside>

@@ -1,8 +1,8 @@
 /**
  * Credentials & System Settings Manager
  *
- * Persists Flipkart Seller credentials, Google Sheets IDs, and Webhook alerts
- * in data/credentials.json while falling back to environment variables.
+ * Persists Flipkart Seller credentials, Zepto credentials, Google Sheets IDs,
+ * and Webhook alerts in data/credentials.json while falling back to environment variables.
  */
 
 const fs = require('fs');
@@ -26,12 +26,24 @@ function loadCredentialsFile() {
   }
 
   credentialsCache = {
+    // Flipkart credentials & settings
     flipkartEmail: fileData.flipkartEmail || process.env.FLIPKART_EMAIL || '',
     flipkartPassword: fileData.flipkartPassword || process.env.FLIPKART_PASSWORD || '',
     spreadsheetId: fileData.spreadsheetId || settings.SPREADSHEET_ID || '',
     trendsSpreadsheetId: fileData.trendsSpreadsheetId || settings.TRENDS_SPREADSHEET_ID || '',
     alertWebhookUrl: fileData.alertWebhookUrl || settings.ALERT_WEBHOOK_URL || '',
     apiAccessToken: fileData.apiAccessToken || process.env.ACCESS_TOKEN || '',
+
+    // Zepto credentials & settings
+    zeptoEmail: fileData.zeptoEmail || process.env.ZEPTO_EMAIL || '',
+    zeptoPassword: fileData.zeptoPassword || process.env.ZEPTO_PASSWORD || '',
+    zeptoImapHost: fileData.zeptoImapHost || process.env.IMAP_HOST || 'imap.gmail.com',
+    zeptoImapUser: fileData.zeptoImapUser || process.env.IMAP_USER || '',
+    zeptoImapPassword: fileData.zeptoImapPassword || process.env.IMAP_PASSWORD || '',
+    zeptoNotifyTo: fileData.zeptoNotifyTo || process.env.NOTIFY_TO || '',
+    zeptoSheetId: fileData.zeptoSheetId || process.env.GSHEET_ID || '',
+    zeptoHeaded: fileData.zeptoHeaded !== undefined ? fileData.zeptoHeaded : (process.env.HEADED === '1'),
+    zeptoPythonPath: fileData.zeptoPythonPath || process.env.PYTHON_PATH || '',
   };
 
   // Sync to runtime settings
@@ -65,7 +77,25 @@ function getRawCredentials() {
 }
 
 /**
- * Returns masked settings for frontend display (never leaks plaintext password).
+ * Returns raw Zepto credentials for child process runner.
+ */
+function getRawZeptoCredentials() {
+  const creds = loadCredentialsFile();
+  return {
+    email: creds.zeptoEmail,
+    password: creds.zeptoPassword,
+    imapHost: creds.zeptoImapHost,
+    imapUser: creds.zeptoImapUser,
+    imapPassword: creds.zeptoImapPassword,
+    notifyTo: creds.zeptoNotifyTo,
+    sheetId: creds.zeptoSheetId,
+    headed: creds.zeptoHeaded ? '1' : '0',
+    pythonPath: creds.zeptoPythonPath,
+  };
+}
+
+/**
+ * Returns masked settings for frontend display (never leaks plaintext passwords).
  */
 function getSafeCredentials() {
   const creds = loadCredentialsFile();
@@ -77,6 +107,19 @@ function getSafeCredentials() {
     trendsSpreadsheetId: creds.trendsSpreadsheetId || '',
     alertWebhookUrl: creds.alertWebhookUrl || '',
     apiAccessToken: creds.apiAccessToken || '',
+
+    // Zepto safe settings
+    zeptoEmail: creds.zeptoEmail || '',
+    hasZeptoPassword: Boolean(creds.zeptoPassword),
+    zeptoPasswordMasked: creds.zeptoPassword ? '••••••••••••' : '',
+    zeptoImapHost: creds.zeptoImapHost || 'imap.gmail.com',
+    zeptoImapUser: creds.zeptoImapUser || '',
+    hasZeptoImapPassword: Boolean(creds.zeptoImapPassword),
+    zeptoImapPasswordMasked: creds.zeptoImapPassword ? '••••••••••••' : '',
+    zeptoNotifyTo: creds.zeptoNotifyTo || '',
+    zeptoSheetId: creds.zeptoSheetId || '',
+    zeptoHeaded: Boolean(creds.zeptoHeaded),
+    zeptoPythonPath: creds.zeptoPythonPath || '',
   };
 }
 
@@ -86,12 +129,12 @@ function getSafeCredentials() {
 function updateCredentials(updates = {}) {
   const creds = loadCredentialsFile();
 
+  // Flipkart
   if (typeof updates.flipkartEmail === 'string') {
     creds.flipkartEmail = updates.flipkartEmail.trim();
     process.env.FLIPKART_EMAIL = creds.flipkartEmail;
   }
 
-  // Only update password if provided and not the masked placeholder
   if (typeof updates.flipkartPassword === 'string' && updates.flipkartPassword.trim() && !updates.flipkartPassword.includes('••••')) {
     creds.flipkartPassword = updates.flipkartPassword;
     process.env.FLIPKART_PASSWORD = creds.flipkartPassword;
@@ -117,12 +160,59 @@ function updateCredentials(updates = {}) {
     process.env.ACCESS_TOKEN = creds.apiAccessToken;
   }
 
+  // Zepto
+  if (typeof updates.zeptoEmail === 'string') {
+    creds.zeptoEmail = updates.zeptoEmail.trim();
+    process.env.ZEPTO_EMAIL = creds.zeptoEmail;
+  }
+
+  if (typeof updates.zeptoPassword === 'string' && updates.zeptoPassword.trim() && !updates.zeptoPassword.includes('••••')) {
+    creds.zeptoPassword = updates.zeptoPassword;
+    process.env.ZEPTO_PASSWORD = creds.zeptoPassword;
+  }
+
+  if (typeof updates.zeptoImapHost === 'string') {
+    creds.zeptoImapHost = updates.zeptoImapHost.trim();
+    process.env.IMAP_HOST = creds.zeptoImapHost;
+  }
+
+  if (typeof updates.zeptoImapUser === 'string') {
+    creds.zeptoImapUser = updates.zeptoImapUser.trim();
+    process.env.IMAP_USER = creds.zeptoImapUser;
+  }
+
+  if (typeof updates.zeptoImapPassword === 'string' && updates.zeptoImapPassword.trim() && !updates.zeptoImapPassword.includes('••••')) {
+    creds.zeptoImapPassword = updates.zeptoImapPassword.replace(/\s+/g, '');
+    process.env.IMAP_PASSWORD = creds.zeptoImapPassword;
+  }
+
+  if (typeof updates.zeptoNotifyTo === 'string') {
+    creds.zeptoNotifyTo = updates.zeptoNotifyTo.trim();
+    process.env.NOTIFY_TO = creds.zeptoNotifyTo;
+  }
+
+  if (typeof updates.zeptoSheetId === 'string') {
+    creds.zeptoSheetId = updates.zeptoSheetId.trim();
+    process.env.GSHEET_ID = creds.zeptoSheetId;
+  }
+
+  if (updates.zeptoHeaded !== undefined) {
+    creds.zeptoHeaded = Boolean(updates.zeptoHeaded);
+    process.env.HEADED = creds.zeptoHeaded ? '1' : '0';
+  }
+
+  if (typeof updates.zeptoPythonPath === 'string') {
+    creds.zeptoPythonPath = updates.zeptoPythonPath.trim();
+    process.env.PYTHON_PATH = creds.zeptoPythonPath;
+  }
+
   saveCredentialsFile();
   return getSafeCredentials();
 }
 
 module.exports = {
   getRawCredentials,
+  getRawZeptoCredentials,
   getSafeCredentials,
   updateCredentials,
 };

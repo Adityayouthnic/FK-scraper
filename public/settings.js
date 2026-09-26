@@ -68,6 +68,27 @@ async function loadSettings() {
     document.getElementById('trends-sheet-id').value = creds.trendsSpreadsheetId || '';
     document.getElementById('alert-webhook-url').value = creds.alertWebhookUrl || '';
     document.getElementById('api-access-token').value = creds.apiAccessToken || '';
+
+    // Zepto Settings
+    const zeptoEmailEl = document.getElementById('zepto-email');
+    if (zeptoEmailEl) zeptoEmailEl.value = creds.zeptoEmail || '';
+    const zeptoImapUserEl = document.getElementById('zepto-imap-user');
+    if (zeptoImapUserEl) zeptoImapUserEl.value = creds.zeptoImapUser || '';
+    const zeptoSheetIdEl = document.getElementById('zepto-sheet-id');
+    if (zeptoSheetIdEl) zeptoSheetIdEl.value = creds.zeptoSheetId || '';
+    const zeptoNotifyToEl = document.getElementById('zepto-notify-to');
+    if (zeptoNotifyToEl) zeptoNotifyToEl.value = creds.zeptoNotifyTo || '';
+
+    const zeptoStatusEl = document.getElementById('zepto-cred-status');
+    if (zeptoStatusEl) {
+      if (creds.hasZeptoPassword && creds.hasZeptoImapPassword) {
+        zeptoStatusEl.className = 'px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200';
+        zeptoStatusEl.textContent = 'Configured';
+      } else {
+        zeptoStatusEl.className = 'px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200';
+        zeptoStatusEl.textContent = 'Partial Credentials';
+      }
+    }
   } catch (err) {
     showToast(err.message, true);
   }
@@ -154,6 +175,60 @@ if (fkCredsForm) {
       if (!res.ok) throw new Error('Failed to update Flipkart credentials.');
       showToast('Flipkart credentials updated successfully!');
       document.getElementById('fk-password').value = '';
+      await loadSettings();
+    } catch (err) {
+      showToast(err.message, true);
+    }
+  });
+}
+
+// Zepto Password toggles
+const toggleZeptoPwdBtn = document.getElementById('toggle-zepto-password');
+if (toggleZeptoPwdBtn) {
+  toggleZeptoPwdBtn.addEventListener('click', () => {
+    const input = document.getElementById('zepto-password');
+    input.type = input.type === 'password' ? 'text' : 'password';
+  });
+}
+
+const toggleZeptoImapPwdBtn = document.getElementById('toggle-zepto-imap-password');
+if (toggleZeptoImapPwdBtn) {
+  toggleZeptoImapPwdBtn.addEventListener('click', () => {
+    const input = document.getElementById('zepto-imap-password');
+    input.type = input.type === 'password' ? 'text' : 'password';
+  });
+}
+
+// Save Zepto credentials
+const zeptoCredsForm = document.getElementById('zepto-creds-form');
+if (zeptoCredsForm) {
+  zeptoCredsForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const email = document.getElementById('zepto-email').value.trim();
+    const password = document.getElementById('zepto-password').value;
+    const imapUser = document.getElementById('zepto-imap-user').value.trim();
+    const imapPassword = document.getElementById('zepto-imap-password').value;
+    const sheetId = document.getElementById('zepto-sheet-id').value.trim();
+    const notifyTo = document.getElementById('zepto-notify-to').value.trim();
+
+    try {
+      const res = await fetch('/api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          zeptoEmail: email,
+          zeptoPassword: password || undefined,
+          zeptoImapUser: imapUser,
+          zeptoImapPassword: imapPassword || undefined,
+          zeptoSheetId: sheetId,
+          zeptoNotifyTo: notifyTo,
+        }),
+      });
+
+      if (!res.ok) throw new Error('Failed to update Zepto credentials.');
+      showToast('Zepto automation credentials updated successfully!');
+      document.getElementById('zepto-password').value = '';
+      document.getElementById('zepto-imap-password').value = '';
       await loadSettings();
     } catch (err) {
       showToast(err.message, true);

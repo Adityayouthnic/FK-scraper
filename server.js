@@ -9,6 +9,7 @@ const { WebSocketServer } = require('ws');
 
 const { runScrapeJob } = require('./src/scraper');
 const { runTrendsJob } = require('./src/trendsScraper');
+const { runZeptoJob } = require('./src/zeptoScraper');
 const { dispatchInput, cancelActiveRun } = require('./src/runner');
 const { closeLiveSession } = require('./src/sessionManager');
 const { initScheduler, getScheduleStatus, executeScheduledJob, updateScheduleConfig } = require('./src/scheduler');
@@ -242,6 +243,18 @@ app.post('/api/run/trends', verifyRunnerAuth, async (req, res) => {
   res.json(result);
 });
 
+app.post('/api/run/zepto', verifyRunnerAuth, async (req, res) => {
+  if (isRunning) {
+    return res.status(409).json({ error: 'A run is already in progress.' });
+  }
+  const result = await executeScheduledJob('zepto', req.body || {}, broadcast);
+  res.json(result);
+});
+
+app.get('/zepto', requireAuth, (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'zepto.html'));
+});
+
 // Prevent unauthenticated direct loading of sensitive HTML static files
 app.use((req, res, next) => {
   if (req.path.endsWith('.html') && req.path !== '/login.html') {
@@ -373,6 +386,8 @@ wss.on('connection', (ws, req) => {
       let result;
       if (activeJob === 'trends') {
         result = await runTrendsJob(send, msg.options || {});
+      } else if (activeJob === 'zepto') {
+        result = await runZeptoJob(send, msg.options || {});
       } else {
         result = await runScrapeJob(send);
       }

@@ -1,9 +1,10 @@
 /**
- * Automated Cron Scheduler for FK-Scraper
+ * Automated Cron Scheduler for FK-Scraper Suite
  *
  * Runs:
  *   - Wallet Scraper: Daily at configured time (default: 07:00 AM IST)
  *   - Search Trends Scraper: Weekly every Monday (default: 08:00 AM IST)
+ *   - Zepto Sync: Daily at configured time (default: 14:00 / 2:00 PM IST)
  *
  * Runs directly in Node.js on Railway with Asia/Kolkata timezone support.
  */
@@ -11,15 +12,18 @@ const cron = require('node-cron');
 const { settings } = require('./config');
 const { runScrapeJob } = require('./scraper');
 const { runTrendsJob } = require('./trendsScraper');
+const { runZeptoJob } = require('./zeptoScraper');
 const { sendAlert } = require('./alerts');
 
 let schedulerInitialized = false;
 let globalBroadcast = () => {};
 let walletTask = null;
 let trendsTask = null;
+let zeptoTask = null;
 
 let lastWalletRun = null;
 let lastTrendsRun = null;
+let lastZeptoRun = null;
 
 let getSystemRunning = () => false;
 let setSystemRunning = () => {};
@@ -75,6 +79,21 @@ async function executeScheduledJob(jobName, options = {}, broadcast = globalBroa
         `Automated run completed: ${result.verticalsProcessed} vertical(s) processed, ${result.rowsAdded} row(s) pushed to Google Sheets.`,
         { time: lastTrendsRun.time }
       );
+    } else if (jobName === 'zepto') {
+      result = await runZeptoJob(send, { ...options, unattended: true, action: options.action || 'daily' });
+      lastZeptoRun = {
+        time: new Date().toLocaleTimeString('en-IN', { timeZone: settings.CRON_TIMEZONE }),
+        date: new Date().toLocaleDateString('en-IN', { timeZone: settings.CRON_TIMEZONE }),
+        status: 'Success',
+        action: options.action || 'daily',
+        rowsProcessed: result.rowsProcessed || 0,
+        datesProcessed: result.datesProcessed || 0,
+      };
+      await sendAlert(
+        'Zepto Sync Auto-Run Succeeded',
+        `Automated run completed: Zepto ${options.action || 'daily'} finished successfully.`,
+        { time: lastZeptoRun.time }
+      );
     } else {
       result = await runScrapeJob(send, { ...options, unattended: true });
       lastWalletRun = {
@@ -97,7 +116,7 @@ async function executeScheduledJob(jobName, options = {}, broadcast = globalBroa
     console.error(`[scheduler] Auto-run for '${jobName}' failed:`, err);
     send('error', { message: `Automated run failed: ${err.message}`, job: jobName });
 
-    const isLoginError = err.message.toLowerCase().includes('login') || err.message.toLowerCase().includes('captcha');
+    const isLoginError = err.message.toLowerCase().includes('login') || err.message.toLowerCase().includes('captcha') || err.message.toLowerCase().includes('otp');
     const runRecord = {
       time: new Date().toLocaleTimeString('en-IN', { timeZone: settings.CRON_TIMEZONE }),
       date: new Date().toLocaleDateString('en-IN', { timeZone: settings.CRON_TIMEZONE }),
@@ -106,13 +125,14 @@ async function executeScheduledJob(jobName, options = {}, broadcast = globalBroa
     };
 
     if (jobName === 'trends') lastTrendsRun = runRecord;
+    else if (jobName === 'zepto') lastZeptoRun = runRecord;
     else lastWalletRun = runRecord;
 
     await sendAlert(
-      isLoginError ? 'Flipkart Login Required' : `${jobName} Auto-Run Failed`,
+      isLoginError ? `${jobName} Login/OTP Required` : `${jobName} Auto-Run Failed`,
       isLoginError
-        ? `Flipkart session expired or requested CAPTCHA during automated run. Please open the dashboard to log in once.`
-        : `Automated run failed with error: ${err.message}`,
+        ? `${jobName} session expired or requires OTP/CAPTCHA during automated run. Please check the dashboard.`
+        : `Automated run for ${jobName} failed with error: ${err.message}`,
       { time: runRecord.time }
     );
 
@@ -134,6 +154,10 @@ function setupCronTasks() {
   if (trendsTask) {
     trendsTask.stop();
     trendsTask = null;
+  }
+  if (zeptoTask) {
+    zeptoTask.stop();
+    zeptoTask = null;
   }
 
   if (!settings.ENABLE_AUTO_SCHEDULE) {
@@ -172,10 +196,25 @@ function setupCronTasks() {
   } catch (err) {
     console.error(`[scheduler] Failed to schedule Search Trends: ${err.message}`);
   }
+
+  // 3. Daily Zepto Sync (14:00 IST)
+  try {
+    zeptoTask = cron.schedule(
+      settings.ZEPTO_CRON_SCHEDULE,
+      async () => {
+        console.log(`[scheduler] Daily Zepto cron triggered (${settings.ZEPTO_CRON_SCHEDULE}) in ${tz}`);
+        await executeScheduledJob('zepto', { action: 'daily' }, globalBroadcast);
+      },
+      { timezone: tz }
+    );
+    console.log(`[scheduler] Zepto Daily Sync scheduled: '${settings.ZEPTO_CRON_SCHEDULE}' (${tz})`);
+  } catch (err) {
+    console.error(`[scheduler] Failed to schedule Zepto Sync: ${err.message}`);
+  }
 }
 
 /**
- * Initialize cron jobs for Wallet Scraper and Search Trends.
+ * Initialize cron jobs for Wallet Scraper, Search Trends, and Zepto Sync.
  */
 function initScheduler(broadcast, isRunningGetter, isRunningSetter) {
   if (schedulerInitialized) return;
@@ -191,7 +230,7 @@ function initScheduler(broadcast, isRunningGetter, isRunningSetter) {
 /**
  * Dynamically update schedule timings and restart cron tasks.
  */
-function updateScheduleConfig({ enabled, walletTime, trendsTime, walletSchedule, trendsSchedule }) {
+function updateScheduleConfig({ enabled, walletTime, trendsTime, zeptoTime, walletSchedule, trendsSchedule, zeptoSchedule }) {
   if (enabled !== undefined) {
     settings.ENABLE_AUTO_SCHEDULE = Boolean(enabled);
   }
@@ -208,6 +247,13 @@ function updateScheduleConfig({ enabled, walletTime, trendsTime, walletSchedule,
     if (cronStr) settings.TRENDS_CRON_SCHEDULE = cronStr;
   } else if (trendsSchedule) {
     settings.TRENDS_CRON_SCHEDULE = trendsSchedule;
+  }
+
+  if (zeptoTime) {
+    const cronStr = timeToCron(zeptoTime, '*');
+    if (cronStr) settings.ZEPTO_CRON_SCHEDULE = cronStr;
+  } else if (zeptoSchedule) {
+    settings.ZEPTO_CRON_SCHEDULE = zeptoSchedule;
   }
 
   setupCronTasks();
@@ -230,6 +276,11 @@ function getScheduleStatus() {
       schedule: settings.TRENDS_CRON_SCHEDULE,
       description: 'Weekly Mondays (8:00 AM IST by default)',
       lastRun: lastTrendsRun,
+    },
+    zepto: {
+      schedule: settings.ZEPTO_CRON_SCHEDULE,
+      description: 'Daily (2:00 PM IST / 14:00 IST by default)',
+      lastRun: lastZeptoRun,
     },
   };
 }
