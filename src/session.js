@@ -15,6 +15,8 @@ const { log, warn } = require('./utils');
 const PROJECT_ROOT = path.join(__dirname, '..');
 
 let storageClient = null;
+let inMemorySession = null;
+
 function getStorageClient() {
   if (!storageClient) {
     storageClient = new Storage({ credentials: loadServiceAccountCredentials() });
@@ -31,13 +33,18 @@ function getLocalSessionPath() {
 }
 
 async function loadSession(send) {
+  if (inMemorySession) {
+    log(send, 'session.load', 'Loaded session from in-memory cache.');
+    return inMemorySession;
+  }
   if (!settings.SESSION_BUCKET) {
     const localPath = getLocalSessionPath();
     if (fs.existsSync(localPath)) {
       try {
         const contents = fs.readFileSync(localPath, 'utf8');
         log(send, 'session.load', `Loaded saved session from local file (${path.basename(localPath)}).`);
-        return JSON.parse(contents);
+        inMemorySession = JSON.parse(contents);
+        return inMemorySession;
       } catch (err) {
         warn(send, 'session.load', `Could not parse local session file (${err.message}) — will log in fresh.`);
         return null;
@@ -69,6 +76,7 @@ async function loadSession(send) {
 async function saveSession(context, send) {
   try {
     const state = await context.storageState();
+    inMemorySession = state;
     if (settings.SESSION_BUCKET) {
       const file = getStorageClient().bucket(settings.SESSION_BUCKET).file(settings.SESSION_OBJECT);
       await file.save(JSON.stringify(state), { contentType: 'application/json' });

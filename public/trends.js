@@ -57,8 +57,10 @@ function setStatus(state) {
   runBtn.classList.toggle('run-btn-stop', isRunning);
   liveBadge.classList.toggle('active', isRunning);
   if (!isRunning) {
-    liveView.style.display = 'none';
-    viewPlaceholder.style.display = 'flex';
+    if (!liveView.src) {
+      liveView.style.display = 'none';
+      viewPlaceholder.style.display = 'flex';
+    }
     verticalSelect.disabled = false;
     pagesInput.disabled = false;
   } else {

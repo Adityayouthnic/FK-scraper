@@ -9,11 +9,10 @@
  *   - No. of Products Shown
  *
  * Then pushes each vertical to the Search_Trends tab in Google Sheets.
+ *
+ * Runs inside the persistent Live URL session — login happens only once.
  */
 const { settings } = require('./config');
-const { launchBrowser } = require('./browser');
-const { loadSession, saveSession } = require('./session');
-const { login } = require('./flipkartLogin');
 const { pushTrends } = require('./trendsSheets');
 const { log, warn, humanPause } = require('./utils');
 const { todayIST } = require('./dateUtil');
@@ -22,10 +21,10 @@ const {
   awaitCancellable,
   createRunContext,
   setupScreencast,
-  setActivePage,
-  clearActivePage,
+  stopScreencast,
   clearActiveRun,
 } = require('./runner');
+const { getOrCreateLiveSession, ensureAuthenticated } = require('./sessionManager');
 
 // slug (used in the page URL) -> display label (matches the sheet's existing casing)
 const VERTICALS = {
@@ -103,20 +102,41 @@ async function scrapeVertical(page, send, run, verticalSlug, pagesToScrape) {
   const url = `${baseUrl}?businessVertical=ALL&section=search_trends&selectedVertical=${verticalSlug}`;
 
   log(send, step, `Navigating to Search Trends for '${verticalLabel}'`);
-  await awaitCancellable(run, page.goto(url, { waitUntil: 'domcontentloaded' }));
+
+  const currentUrl = page.url();
+  if (currentUrl === url) {
+    log(send, step, `Already on target vertical URL. Refreshing view for '${verticalLabel}'...`);
+    await awaitCancellable(run, page.reload({ waitUntil: 'domcontentloaded' }));
+  } else if (currentUrl.includes('seller-insights')) {
+    // Single Page App hash router: navigate and reload to guarantee fresh React mount for the vertical
+    await awaitCancellable(run, page.goto(url, { waitUntil: 'domcontentloaded' }));
+    await awaitCancellable(run, page.reload({ waitUntil: 'domcontentloaded' }));
+  } else {
+    await awaitCancellable(run, page.goto(url, { waitUntil: 'domcontentloaded' }));
+  }
 
   try {
-    await awaitCancellable(run, page.waitForLoadState('networkidle', { timeout: settings.PAGE_LOAD_TIMEOUT_MS }));
+    await awaitCancellable(run, page.waitForLoadState('networkidle', { timeout: 15000 }));
   } catch {
-    // If networkidle times out, proceed if DOM is ready
+    // networkidle is best-effort
   }
-  await awaitCancellable(run, page.waitForTimeout(3000));
+  await awaitCancellable(run, page.waitForTimeout(2000));
 
   log(send, step, `Waiting for trends grid to load for '${verticalLabel}'...`);
-  await awaitCancellable(
-    run,
-    page.waitForSelector('table[data-testid="grid-component"] tbody tr', { timeout: settings.ELEMENT_TIMEOUT_MS })
-  );
+  try {
+    await awaitCancellable(
+      run,
+      page.waitForSelector('table[data-testid="grid-component"] tbody tr', { timeout: settings.ELEMENT_TIMEOUT_MS })
+    );
+  } catch (waitErr) {
+    log(send, step, `Grid component not ready yet, attempting page refresh for '${verticalLabel}'...`);
+    await awaitCancellable(run, page.reload({ waitUntil: 'domcontentloaded' }));
+    await awaitCancellable(run, page.waitForTimeout(3000));
+    await awaitCancellable(
+      run,
+      page.waitForSelector('table[data-testid="grid-component"] tbody tr', { timeout: settings.ELEMENT_TIMEOUT_MS })
+    );
+  }
   await awaitCancellable(run, page.waitForTimeout(800));
 
   const allRows = [];
@@ -200,61 +220,26 @@ async function scrapeVertical(page, send, run, verticalSlug, pagesToScrape) {
 
 /**
  * Execute the complete Search Trends scraping job.
- * Shares the exact same login flow, screencast streaming, and session persistence as Wallet Scraper.
+ * Runs in the persistent live browser session — login occurs only once.
  */
 async function runTrendsJob(send, options = {}) {
   const run = createRunContext('trends');
 
-  let browser = null;
-  let context = null;
-  let page = null;
   let client = null;
+  let page = null;
+  let context = null;
 
   try {
-    const savedSession = await awaitCancellable(run, loadSession(send));
-    const launched = await awaitCancellable(
-      run,
-      launchBrowser(send, { storageState: savedSession, useStealth: true }),
-      (lateBrowser) => lateBrowser?.browser?.close().catch(() => {})
-    );
-    ({ browser, context } = launched);
-    run.browser = browser;
+    const sessionInfo = await getOrCreateLiveSession(send, run);
+    page = sessionInfo.page;
+    context = sessionInfo.context;
 
-    page = await awaitCancellable(run, context.newPage(), (latePage) => latePage?.close().catch(() => {}));
-    setActivePage(page);
-
+    // Attach real-time screencast so the user sees the live session immediately
     client = await setupScreencast(run, context, page, send);
 
-    // ---- Login Verification ----
-    let loggedIn = false;
-    if (savedSession) {
-      try {
-        log(send, 'session', 'Checking saved session validity on seller portal...');
-        const checkUrl = settings.SELLER_INSIGHTS_URL || 'https://seller.flipkart.com/index.html#dashboard/growth/seller-insights';
-        await awaitCancellable(run, page.goto(checkUrl, { waitUntil: 'domcontentloaded' }));
-        await awaitCancellable(run, page.waitForTimeout(4000));
-
-        const currentUrl = page.url();
-        const hasDashboard = currentUrl.includes('#dashboard');
-        const hasPassword = await page.locator('input[type="password"]').count().catch(() => 0);
-
-        if (hasDashboard && hasPassword === 0) {
-          loggedIn = true;
-          log(send, 'session', `Saved session is active (${currentUrl}) — skipping login form.`);
-        } else {
-          warn(send, 'session', `Saved session not active (landed on ${currentUrl}) — initiating fresh login.`);
-        }
-      } catch (checkErr) {
-        if (run.cancelled) throw checkErr;
-        warn(send, 'session', `Saved session check failed (${checkErr.message}) — initiating fresh login.`);
-      }
-    }
-
-    if (!loggedIn) {
-      log(send, 'login', 'Initiating Flipkart seller login flow...');
-      await awaitCancellable(run, login(page, send));
-      await awaitCancellable(run, saveSession(context, send));
-    }
+    // Verify authentication ONCE: if already on #dashboard, skips login immediately
+    const checkUrl = settings.SELLER_INSIGHTS_URL || 'https://seller.flipkart.com/index.html#dashboard/growth/seller-insights';
+    await ensureAuthenticated(page, context, send, run, checkUrl);
 
     // Determine target verticals & pages
     const pagesPerVertical = Math.max(1, parseInt(options.pages, 10) || settings.TRENDS_PAGES_PER_VERTICAL || 10);
@@ -300,13 +285,8 @@ async function runTrendsJob(send, options = {}) {
     if (run.cancelled || err.code === 'RUN_CANCELLED') throw new RunCancelledError();
     throw err;
   } finally {
-    try {
-      if (client) await client.send('Page.stopScreencast');
-    } catch {}
-    clearActivePage(page);
-    try {
-      if (browser) await browser.close();
-    } catch {}
+    await stopScreencast(client);
+    // Keep the live browser & page open in memory for future runs and verticals!
     run.resolveCancel();
     clearActiveRun(run);
   }

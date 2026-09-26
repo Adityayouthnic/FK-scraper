@@ -7,6 +7,7 @@ const { WebSocketServer } = require('ws');
 const { runScrapeJob } = require('./src/scraper');
 const { runTrendsJob } = require('./src/trendsScraper');
 const { dispatchInput, cancelActiveRun } = require('./src/runner');
+const { closeLiveSession } = require('./src/sessionManager');
 
 const app = express();
 
@@ -87,6 +88,13 @@ wss.on('connection', (ws) => {
       return;
     }
 
+    if (msg.type === 'reset_session') {
+      send('log', { message: 'Closing live browser session...' });
+      await closeLiveSession();
+      send('log', { message: 'Live browser session closed. Next run will start fresh.' });
+      return;
+    }
+
     if (msg.type !== 'run') return;
 
     if (isRunning) {
@@ -126,4 +134,16 @@ wss.on('connection', (ws) => {
 const port = process.env.PORT || 8080;
 server.listen(port, () => {
   console.log(`FK-scraper listening on :${port}`);
+});
+
+process.on('SIGTERM', async () => {
+  console.log('SIGTERM received, closing live browser session...');
+  await closeLiveSession();
+  process.exit(0);
+});
+
+process.on('SIGINT', async () => {
+  console.log('SIGINT received, closing live browser session...');
+  await closeLiveSession();
+  process.exit(0);
 });

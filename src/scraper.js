@@ -1,7 +1,4 @@
 const { settings } = require('./config');
-const { launchBrowser } = require('./browser');
-const { loadSession, saveSession } = require('./session');
-const { login } = require('./flipkartLogin');
 const { navigateToWallet, selectDate, downloadWalletReport } = require('./wallet');
 const { getPresentDates, missingDatesInWindow, pushToSheet } = require('./sheets');
 const { log, warn } = require('./utils');
@@ -13,48 +10,27 @@ const {
   awaitCancellable,
   createRunContext,
   setupScreencast,
-  setActivePage,
-  clearActivePage,
+  stopScreencast,
   clearActiveRun,
 } = require('./runner');
+const { getOrCreateLiveSession, ensureAuthenticated } = require('./sessionManager');
 
 async function runScrapeJob(send) {
   const run = createRunContext('wallet');
 
-  let browser = null;
-  let context = null;
-  let page = null;
   let client = null;
+  let page = null;
+  let context = null;
   try {
-    const savedSession = await awaitCancellable(run, loadSession(send));
-    const launched = await awaitCancellable(
-      run,
-      launchBrowser(send, { storageState: savedSession, useStealth: true }),
-      (lateBrowser) => lateBrowser?.browser?.close().catch(() => {})
-    );
-    ({ browser, context } = launched);
-    run.browser = browser;
-
-    page = await awaitCancellable(run, context.newPage(), (latePage) => latePage?.close().catch(() => {}));
-    setActivePage(page);
+    const sessionInfo = await getOrCreateLiveSession(send, run);
+    page = sessionInfo.page;
+    context = sessionInfo.context;
 
     client = await setupScreencast(run, context, page, send);
 
-    let loggedIn = false;
+    await ensureAuthenticated(page, context, send, run, settings.WALLET_URL);
 
-    if (savedSession) {
-      try {
-        await awaitCancellable(run, navigateToWallet(page, send));
-        loggedIn = true;
-      } catch (navErr) {
-        if (run.cancelled) throw navErr;
-        warn(send, 'session', `Saved session didn't work (${navErr.message}) — logging in fresh.`);
-      }
-    }
-
-    if (!loggedIn) {
-      await awaitCancellable(run, login(page, send));
-      await awaitCancellable(run, saveSession(context, send));
+    if (!page.url().includes('dashboard/ads/wallet/summary')) {
       await awaitCancellable(run, navigateToWallet(page, send));
     }
 
@@ -96,13 +72,7 @@ async function runScrapeJob(send) {
     if (run.cancelled || err.code === 'RUN_CANCELLED') throw new RunCancelledError();
     throw err;
   } finally {
-    try {
-      if (client) await client.send('Page.stopScreencast');
-    } catch {}
-    clearActivePage(page);
-    try {
-      if (browser) await browser.close();
-    } catch {}
+    await stopScreencast(client);
     run.resolveCancel();
     clearActiveRun(run);
   }

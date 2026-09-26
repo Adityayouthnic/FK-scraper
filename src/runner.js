@@ -49,9 +49,6 @@ function cancelActiveRun() {
   if (activeRun.rejectCancel) {
     activeRun.rejectCancel(new RunCancelledError());
   }
-  if (activeRun.browser) {
-    activeRun.browser.close().catch(() => {});
-  }
   return true;
 }
 
@@ -137,6 +134,16 @@ async function setupScreencast(run, context, page, send) {
   return client;
 }
 
+async function stopScreencast(client) {
+  if (!client) return;
+  try {
+    await client.send('Page.stopScreencast');
+  } catch {}
+  try {
+    await client.detach();
+  } catch {}
+}
+
 module.exports = {
   VIEWPORT,
   RunCancelledError,
@@ -151,4 +158,5 @@ module.exports = {
   dispatchInput,
   createRunContext,
   setupScreencast,
+  stopScreencast,
 };
