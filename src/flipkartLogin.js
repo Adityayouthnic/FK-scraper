@@ -18,11 +18,14 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+const { getRawCredentials } = require('./credentials');
+
 function loadCredentials() {
-  const email = process.env.FLIPKART_EMAIL;
-  const password = process.env.FLIPKART_PASSWORD;
+  const creds = getRawCredentials();
+  const email = creds.email || process.env.FLIPKART_EMAIL;
+  const password = creds.password || process.env.FLIPKART_PASSWORD;
   if (!email || !password) {
-    throw new Error('Set FLIPKART_EMAIL and FLIPKART_PASSWORD before running.');
+    throw new Error('Flipkart credentials missing. Please configure FLIPKART_EMAIL and FLIPKART_PASSWORD in Settings or .env.');
   }
   return { email, password };
 }

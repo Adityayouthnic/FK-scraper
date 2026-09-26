@@ -17,7 +17,7 @@ async function sendAlert(title, message, extra = {}) {
     (extra.time ? `\n⏰ ${extra.time}` : '');
 
   try {
-    await fetch(webhookUrl, {
+    const res = await fetch(webhookUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -28,8 +28,10 @@ async function sendAlert(title, message, extra = {}) {
         ...extra,
       }),
     });
+    return { success: res.ok, status: res.status };
   } catch (err) {
     console.error(`[alert] Failed to send webhook alert: ${err.message}`);
+    return { success: false, error: err.message };
   }
 }
 

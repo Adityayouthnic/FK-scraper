@@ -13,3 +13,4 @@ service-account.json
 
 *.log
 downloads/
+data/

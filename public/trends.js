@@ -265,3 +265,32 @@ window.addEventListener('keyup', (e) => {
   e.preventDefault();
   sendInput({ event: 'keyup', key: e.key });
 });
+
+// Logout handler
+const logoutBtn = document.getElementById('logout-btn');
+if (logoutBtn) {
+  logoutBtn.addEventListener('click', async () => {
+    if (confirm('Sign out of the scraper dashboard?')) {
+      await fetch('/api/auth/logout', { method: 'POST' });
+      window.location.href = '/login';
+    }
+  });
+}
+
+// Ensure session is valid
+async function checkAuth() {
+  try {
+    const res = await fetch('/api/auth/me');
+    if (!res.ok) {
+      window.location.href = '/login?redirect=' + encodeURIComponent(window.location.pathname);
+      return;
+    }
+    const data = await res.json();
+    if (!data.authenticated) {
+      window.location.href = '/login?redirect=' + encodeURIComponent(window.location.pathname);
+    }
+  } catch (err) {
+    console.warn('Auth check failed:', err);
+  }
+}
+checkAuth();

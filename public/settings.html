@@ -1,0 +1,394 @@
+<!doctype html>
+<html lang="en" class="h-full bg-slate-50">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Settings &middot; Flipkart Scraper Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#eef2ff',
+              100: '#e0e7ff',
+              200: '#c7d2fe',
+              500: '#6366f1',
+              600: '#4f46e5',
+              700: '#4338ca',
+              800: '#3730a3',
+              900: '#312e81',
+            }
+          },
+          fontFamily: {
+            sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
+            mono: ['"JetBrains Mono"', 'monospace'],
+          }
+        }
+      }
+    };
+  </script>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body class="h-full flex overflow-hidden text-slate-800 antialiased font-sans">
+
+  <!-- SVG Icon Library -->
+  <svg style="display:none" aria-hidden="true">
+    <symbol id="icon-wallet" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M3 7a2 2 0 0 1 2-2h13a1 1 0 0 1 1 1v2"/>
+      <path d="M3 7v10a2 2 0 0 0 2 2h14a1 1 0 0 0 1-1v-8a1 1 0 0 0-1-1H5a2 2 0 0 1-2-2z"/>
+      <circle cx="16" cy="14" r="1.5" fill="currentColor"/>
+    </symbol>
+    <symbol id="icon-trending" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/>
+      <polyline points="17 6 23 6 23 12"/>
+    </symbol>
+    <symbol id="icon-settings" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="3"/>
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+    </symbol>
+    <symbol id="icon-logout" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/>
+    </symbol>
+    <symbol id="icon-users" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+      <circle cx="9" cy="7" r="4"/>
+      <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>
+    </symbol>
+    <symbol id="icon-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+      <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+    </symbol>
+    <symbol id="icon-key" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M21 2l-2 2m-1.5 1.5L14 9M3 21h4v-3h3v-3h2l3.5-3.5a5 5 0 1 0-7.07-7.07L3 17v4z"/>
+    </symbol>
+    <symbol id="icon-trash" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="3 6 5 6 21 6"/>
+      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+    </symbol>
+  </svg>
+
+  <!-- Slim Sidebar Navigation Rail -->
+  <aside class="w-16 flex-shrink-0 bg-white border-r border-slate-200/80 flex flex-col items-center py-4 z-20 shadow-[1px_0_3px_rgba(0,0,0,0.02)]">
+    <!-- Brand Mark -->
+    <a href="/" class="w-10 h-10 rounded-xl bg-gradient-to-tr from-brand-600 to-indigo-500 text-white font-bold flex items-center justify-center shadow-md shadow-brand-500/20 mb-8 transition-transform hover:scale-105" title="Flipkart Scraper Suite">
+      FK
+    </a>
+
+    <!-- Nav Items -->
+    <nav class="flex flex-col gap-3 w-full px-2">
+      <a href="/" class="relative group flex items-center justify-center w-12 h-12 rounded-xl text-slate-400 hover:text-brand-600 hover:bg-slate-50 transition-all" title="Wallet Scraper (Daily)">
+        <svg class="w-5 h-5"><use href="#icon-wallet"/></svg>
+        <span class="absolute left-16 bg-slate-900 text-white text-xs px-2.5 py-1 rounded-md opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity whitespace-nowrap shadow-lg z-50">
+          Wallet Scraper
+        </span>
+      </a>
+
+      <a href="/trends" class="relative group flex items-center justify-center w-12 h-12 rounded-xl text-slate-400 hover:text-brand-600 hover:bg-slate-50 transition-all" title="Search Trends (Weekly)">
+        <svg class="w-5 h-5"><use href="#icon-trending"/></svg>
+        <span class="absolute left-16 bg-slate-900 text-white text-xs px-2.5 py-1 rounded-md opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity whitespace-nowrap shadow-lg z-50">
+          Search Trends
+        </span>
+      </a>
+
+      <a href="/settings" class="relative group flex items-center justify-center w-12 h-12 rounded-xl bg-brand-50 text-brand-600 shadow-sm transition-all" title="Settings &amp; Users">
+        <svg class="w-5 h-5"><use href="#icon-settings"/></svg>
+        <span class="absolute left-16 bg-slate-900 text-white text-xs px-2.5 py-1 rounded-md opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity whitespace-nowrap shadow-lg z-50">
+          Settings &amp; Users
+        </span>
+      </a>
+    </nav>
+
+    <!-- Footer Logout -->
+    <div class="mt-auto flex flex-col gap-3 w-full px-2">
+      <button id="logout-btn" type="button" class="relative group flex items-center justify-center w-12 h-12 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-all" title="Sign Out">
+        <svg class="w-5 h-5"><use href="#icon-logout"/></svg>
+        <span class="absolute left-16 bg-slate-900 text-white text-xs px-2.5 py-1 rounded-md opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity whitespace-nowrap shadow-lg z-50">
+          Sign Out
+        </span>
+      </button>
+    </div>
+  </aside>
+
+  <!-- Main App Shell -->
+  <div class="flex-1 flex flex-col min-w-0 overflow-hidden">
+
+    <!-- Topbar Header -->
+    <header class="h-16 flex-shrink-0 bg-white border-b border-slate-200/80 px-6 flex items-center justify-between gap-4 z-10">
+      <div class="flex items-center gap-3 min-w-0">
+        <div class="flex items-center gap-2">
+          <span class="font-bold text-slate-900 text-base tracking-tight">System Settings</span>
+          <span class="text-slate-300 font-normal">/</span>
+          <span class="text-xs font-medium text-slate-500 hidden sm:inline">Credentials &amp; User Access</span>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-4">
+        <div class="flex items-center gap-2 text-xs">
+          <div class="w-7 h-7 rounded-full bg-brand-50 text-brand-600 font-bold flex items-center justify-center border border-brand-200" id="user-avatar">
+            A
+          </div>
+          <div class="flex flex-col text-left">
+            <span id="current-user-name" class="font-semibold text-slate-800">Admin</span>
+            <span id="current-user-role" class="text-[10px] text-slate-400 uppercase font-medium">Administrator</span>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Settings Scroll Area -->
+    <main class="flex-1 p-6 overflow-y-auto bg-slate-50/60 custom-scrollbar">
+      <div class="max-w-5xl mx-auto space-y-8 pb-12">
+
+        <!-- Banner / Notification Toast -->
+        <div id="toast-banner" class="hidden p-4 rounded-xl text-xs font-semibold flex items-center justify-between shadow-sm transition-all">
+          <span id="toast-message"></span>
+          <button type="button" onclick="document.getElementById('toast-banner').classList.add('hidden')" class="text-slate-400 hover:text-slate-700 ml-4 font-bold">&times;</button>
+        </div>
+
+        <!-- Section 1: Flipkart Seller Credentials -->
+        <section class="bg-white rounded-2xl border border-slate-200/90 shadow-sm overflow-hidden">
+          <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/40">
+            <div class="flex items-center gap-3">
+              <div class="w-8 h-8 rounded-xl bg-indigo-50 text-brand-600 flex items-center justify-center font-bold">
+                <svg class="w-4 h-4"><use href="#icon-lock"/></svg>
+              </div>
+              <div>
+                <h3 class="text-sm font-bold text-slate-900">Flipkart Seller Credentials</h3>
+                <p class="text-xs text-slate-500">Automated login credentials used during live scraping runs</p>
+              </div>
+            </div>
+            <span id="fk-cred-status" class="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+              Configured
+            </span>
+          </div>
+
+          <form id="fk-creds-form" class="p-6 space-y-4">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+              <div>
+                <label for="fk-email" class="block text-xs font-semibold text-slate-700 uppercase tracking-wide">Flipkart Login Email</label>
+                <input type="email" id="fk-email" required placeholder="seller@example.com"
+                  class="mt-1.5 block w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 shadow-sm" />
+              </div>
+
+              <div>
+                <label for="fk-password" class="block text-xs font-semibold text-slate-700 uppercase tracking-wide">Flipkart Login Password</label>
+                <div class="mt-1.5 relative">
+                  <input type="password" id="fk-password" placeholder="Leave empty to keep existing password"
+                    class="block w-full rounded-xl border border-slate-300 px-3.5 py-2.5 pr-10 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 shadow-sm" />
+                  <button type="button" id="toggle-fk-password" class="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div class="pt-2 flex items-center justify-between">
+              <span class="text-[11px] text-slate-400">Credentials are securely stored on your Railway container.</span>
+              <button type="submit" id="save-fk-creds-btn"
+                class="px-4 py-2 text-xs font-semibold text-white bg-brand-600 hover:bg-brand-700 rounded-xl shadow-sm transition-all focus:outline-none focus:ring-2 focus:ring-brand-500">
+                Save Flipkart Credentials
+              </button>
+            </div>
+          </form>
+        </section>
+
+        <!-- Section 2: User Access & Management -->
+        <section class="bg-white rounded-2xl border border-slate-200/90 shadow-sm overflow-hidden">
+          <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/40">
+            <div class="flex items-center gap-3">
+              <div class="w-8 h-8 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center font-bold">
+                <svg class="w-4 h-4"><use href="#icon-users"/></svg>
+              </div>
+              <div>
+                <h3 class="text-sm font-bold text-slate-900">User Access Management</h3>
+                <p class="text-xs text-slate-500">Manage operators and administrators with dashboard access</p>
+              </div>
+            </div>
+            <button type="button" id="open-add-user-btn"
+              class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-brand-600 bg-brand-50 hover:bg-brand-100 rounded-lg transition-colors">
+              <span>+ Add User</span>
+            </button>
+          </div>
+
+          <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-slate-200 text-xs">
+              <thead class="bg-slate-50 text-slate-500 font-semibold uppercase tracking-wider text-[10px]">
+                <tr>
+                  <th scope="col" class="px-6 py-3 text-left">Username</th>
+                  <th scope="col" class="px-6 py-3 text-left">Display Name</th>
+                  <th scope="col" class="px-6 py-3 text-left">Role</th>
+                  <th scope="col" class="px-6 py-3 text-left">Created</th>
+                  <th scope="col" class="px-6 py-3 text-left">Last Active</th>
+                  <th scope="col" class="px-6 py-3 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="users-table-body" class="divide-y divide-slate-100 bg-white text-slate-700">
+                <tr><td colspan="6" class="px-6 py-4 text-center text-slate-400">Loading users...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- Section 3: Google Sheets & Automation Configuration -->
+        <section class="bg-white rounded-2xl border border-slate-200/90 shadow-sm overflow-hidden">
+          <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/40">
+            <div class="flex items-center gap-3">
+              <div class="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
+                <svg class="w-4 h-4"><use href="#icon-wallet"/></svg>
+              </div>
+              <div>
+                <h3 class="text-sm font-bold text-slate-900">Google Sheets &amp; Automation Config</h3>
+                <p class="text-xs text-slate-500">Destination Google Spreadsheet IDs for automated data export</p>
+              </div>
+            </div>
+          </div>
+
+          <form id="sheets-config-form" class="p-6 space-y-4">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+              <div>
+                <label for="wallet-sheet-id" class="block text-xs font-semibold text-slate-700 uppercase tracking-wide">Wallet Google Sheet ID</label>
+                <input type="text" id="wallet-sheet-id" placeholder="1eNU-93aV5YLxAjtImJh..."
+                  class="mt-1.5 block w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-xs font-mono text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 shadow-sm" />
+              </div>
+
+              <div>
+                <label for="trends-sheet-id" class="block text-xs font-semibold text-slate-700 uppercase tracking-wide">Search Trends Google Sheet ID</label>
+                <input type="text" id="trends-sheet-id" placeholder="1eNU-93aV5YLxAjtImJh..."
+                  class="mt-1.5 block w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-xs font-mono text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 shadow-sm" />
+              </div>
+            </div>
+
+            <div class="pt-2 flex justify-end">
+              <button type="submit" id="save-sheets-btn"
+                class="px-4 py-2 text-xs font-semibold text-white bg-brand-600 hover:bg-brand-700 rounded-xl shadow-sm transition-all focus:outline-none focus:ring-2 focus:ring-brand-500">
+                Save Google Sheets IDs
+              </button>
+            </div>
+          </form>
+        </section>
+
+        <!-- Section 4: Webhook Alerts & API Security -->
+        <section class="bg-white rounded-2xl border border-slate-200/90 shadow-sm overflow-hidden">
+          <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/40">
+            <div class="flex items-center gap-3">
+              <div class="w-8 h-8 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold">
+                <svg class="w-4 h-4"><use href="#icon-key"/></svg>
+              </div>
+              <div>
+                <h3 class="text-sm font-bold text-slate-900">Alert Webhooks &amp; Programmatic API Access</h3>
+                <p class="text-xs text-slate-500">Universal webhook alerts (Discord/Slack/Telegram) and external API trigger token</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="p-6 space-y-6">
+            <!-- Webhook URL -->
+            <div>
+              <label for="alert-webhook-url" class="block text-xs font-semibold text-slate-700 uppercase tracking-wide">Notification Webhook URL</label>
+              <div class="mt-1.5 flex gap-3">
+                <input type="url" id="alert-webhook-url" placeholder="https://discord.com/api/webhooks/... or https://hooks.slack.com/..."
+                  class="flex-1 rounded-xl border border-slate-300 px-3.5 py-2.5 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 shadow-sm" />
+                <button type="button" id="test-webhook-btn"
+                  class="px-3.5 py-2 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors whitespace-nowrap">
+                  Test Alert
+                </button>
+                <button type="button" id="save-webhook-btn"
+                  class="px-4 py-2 text-xs font-semibold text-white bg-brand-600 hover:bg-brand-700 rounded-xl transition-all shadow-sm whitespace-nowrap">
+                  Save Webhook
+                </button>
+              </div>
+              <p class="mt-1 text-[11px] text-slate-400">Triggered if CAPTCHA is encountered during unattended auto-runs or on job completion.</p>
+            </div>
+
+            <!-- API Access Token -->
+            <div class="pt-4 border-t border-slate-100">
+              <label for="api-access-token" class="block text-xs font-semibold text-slate-700 uppercase tracking-wide">Programmatic API Access Token</label>
+              <div class="mt-1.5 flex gap-3">
+                <input type="text" id="api-access-token" readonly
+                  class="flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-xs font-mono text-slate-600 shadow-inner select-all" />
+                <button type="button" id="copy-token-btn"
+                  class="px-3.5 py-2 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors whitespace-nowrap">
+                  Copy Token
+                </button>
+                <button type="button" id="regenerate-token-btn"
+                  class="px-3.5 py-2 text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 rounded-xl transition-colors whitespace-nowrap">
+                  Regenerate
+                </button>
+              </div>
+              <p class="mt-1 text-[11px] text-slate-400">Include as <code>Bearer &lt;TOKEN&gt;</code> in headers for <code>POST /api/run/wallet</code> and <code>POST /api/run/trends</code>.</p>
+            </div>
+          </div>
+        </section>
+
+      </div>
+    </main>
+  </div>
+
+  <!-- Add User Modal Dialog -->
+  <div id="add-user-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
+    <div class="w-full max-w-md bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
+      <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+        <h3 class="text-sm font-bold text-slate-900">Add New Dashboard User</h3>
+        <button type="button" onclick="closeAddUserModal()" class="text-slate-400 hover:text-slate-600 text-lg">&times;</button>
+      </div>
+      <form id="add-user-form" class="p-6 space-y-4">
+        <div>
+          <label class="block text-xs font-semibold text-slate-700">Username</label>
+          <input type="text" id="new-username" required placeholder="e.g. operator1"
+            class="mt-1 block w-full rounded-xl border border-slate-300 px-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand-500" />
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-700">Display Name</label>
+          <input type="text" id="new-name" placeholder="e.g. Operations Assistant"
+            class="mt-1 block w-full rounded-xl border border-slate-300 px-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand-500" />
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-700">Role</label>
+          <select id="new-role" class="mt-1 block w-full rounded-xl border border-slate-300 px-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand-500">
+            <option value="operator">Operator (Run &amp; View Scrapers)</option>
+            <option value="admin">Administrator (Full Access &amp; User Mgmt)</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-700">Password</label>
+          <input type="password" id="new-password" required minlength="6" placeholder="Minimum 6 characters"
+            class="mt-1 block w-full rounded-xl border border-slate-300 px-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand-500" />
+        </div>
+        <div class="pt-3 flex justify-end gap-2">
+          <button type="button" onclick="closeAddUserModal()" class="px-3.5 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg">Cancel</button>
+          <button type="submit" class="px-4 py-2 text-xs font-semibold text-white bg-brand-600 hover:bg-brand-700 rounded-lg shadow-sm">Create User</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Change Password Modal Dialog -->
+  <div id="change-pwd-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
+    <div class="w-full max-w-sm bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
+      <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+        <h3 class="text-sm font-bold text-slate-900">Change Password: <span id="pwd-modal-user" class="text-brand-600"></span></h3>
+        <button type="button" onclick="closePwdModal()" class="text-slate-400 hover:text-slate-600 text-lg">&times;</button>
+      </div>
+      <form id="change-pwd-form" class="p-6 space-y-4">
+        <input type="hidden" id="pwd-target-user" />
+        <div>
+          <label class="block text-xs font-semibold text-slate-700">New Password</label>
+          <input type="password" id="target-new-password" required minlength="6" placeholder="Minimum 6 characters"
+            class="mt-1 block w-full rounded-xl border border-slate-300 px-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand-500" />
+        </div>
+        <div class="pt-3 flex justify-end gap-2">
+          <button type="button" onclick="closePwdModal()" class="px-3.5 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg">Cancel</button>
+          <button type="submit" class="px-4 py-2 text-xs font-semibold text-white bg-brand-600 hover:bg-brand-700 rounded-lg shadow-sm">Update Password</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="/settings.js"></script>
+</body>
+</html>

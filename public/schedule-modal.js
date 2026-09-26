@@ -30,6 +30,10 @@
   async function fetchSchedule() {
     try {
       const res = await fetch('/api/schedule');
+      if (res.status === 401) {
+        window.location.href = '/login?redirect=' + encodeURIComponent(window.location.pathname);
+        return null;
+      }
       if (!res.ok) throw new Error('Failed to fetch schedule');
       scheduleState = await res.json();
       updateHeaderBadge(scheduleState);
@@ -125,7 +129,14 @@
         body: JSON.stringify(payload),
       });
 
-      if (!res.ok) throw new Error('Failed to update schedule');
+      if (res.status === 401) {
+        window.location.href = '/login?redirect=' + encodeURIComponent(window.location.pathname);
+        return;
+      }
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || 'Failed to update schedule');
+      }
       const data = await res.json();
       if (data.schedule) {
         scheduleState = data.schedule;
