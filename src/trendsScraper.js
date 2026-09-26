@@ -34,23 +34,63 @@ const VERTICALS = {
   Women_Kurta_And_Kurti: 'Women Kurta And Kurti',
 };
 
-const EXTRACT_ROWS_JS = `
-() => {
-  const rows = [...document.querySelectorAll('table[data-testid="grid-component"] tbody tr')];
-  return rows.map(tr => {
+/**
+ * In-browser evaluation function to extract rows from Flipkart's Search Trends table.
+ * Uses both specific class names and semantic fallbacks so styled-components hash changes
+ * won't break extraction.
+ */
+function extractTrendsRows() {
+  const table = document.querySelector('table[data-testid="grid-component"]');
+  if (!table) return [];
+  const rows = [...table.querySelectorAll('tbody tr')];
+  return rows.map((tr) => {
     const tds = tr.querySelectorAll('td');
     if (tds.length < 6) return null;
-    const term = tds[0].querySelector('.styles__ProdTitle-sc-jw88a7-0')?.textContent.trim() || '';
-    const volume = tds[2].querySelector('.styles__VolumeValue-sc-1llvjli-0')?.textContent.trim() || '';
-    const arrowEl = tds[2].querySelector('.styles__ArrowIcon-sc-1llvjli-1');
+
+    // Col 0: Searched Term
+    const termEl =
+      tds[0].querySelector('[class*="ProdTitle"]') ||
+      tds[0].querySelector('span') ||
+      tds[0];
+    const term = termEl ? termEl.textContent.trim() : '';
+
+    // Col 2: Weekly search volume & % change
+    const volEl =
+      tds[2].querySelector('[class*="VolumeValue"]') ||
+      tds[2].querySelector('span') ||
+      tds[2];
+    const volume = volEl ? volEl.textContent.trim() : '';
+
+    const arrowEl =
+      tds[2].querySelector('[class*="ArrowIcon"]') ||
+      tds[2].querySelector('svg') ||
+      tds[2].querySelector('span:last-child');
     const change = arrowEl ? arrowEl.textContent.trim() : '';
-    const ctr = tds[3].querySelector('.styles__CtrCell-sc-1llvjli-2')?.textContent.trim() || '';
-    const units = tds[4].querySelector('.styles__CtrCell-sc-1llvjli-2')?.textContent.trim() || '';
-    const products = tds[5].querySelector('.styles__CtrCell-sc-1llvjli-2')?.textContent.trim() || '';
+
+    // Col 3: CTR%
+    const ctrEl =
+      tds[3].querySelector('[class*="CtrCell"]') ||
+      tds[3].querySelector('span') ||
+      tds[3];
+    const ctr = ctrEl ? ctrEl.textContent.trim() : '';
+
+    // Col 4: Units Sold
+    const unitsEl =
+      tds[4].querySelector('[class*="CtrCell"]') ||
+      tds[4].querySelector('span') ||
+      tds[4];
+    const units = unitsEl ? unitsEl.textContent.trim() : '';
+
+    // Col 5: No. of Products Shown
+    const productsEl =
+      tds[5].querySelector('[class*="CtrCell"]') ||
+      tds[5].querySelector('span') ||
+      tds[5];
+    const products = productsEl ? productsEl.textContent.trim() : '';
+
     return { term, volume, change, ctr, units, products };
   }).filter(Boolean);
 }
-`;
 
 /**
  * Scrape `pages` pages (50 rows each) of Search Trends for one vertical.
@@ -83,12 +123,19 @@ async function scrapeVertical(page, send, run, verticalSlug, pagesToScrape) {
   for (let pageNum = 1; pageNum <= pagesToScrape; pageNum++) {
     if (run.cancelled) throw new RunCancelledError();
 
-    const rows = await awaitCancellable(run, page.evaluate(EXTRACT_ROWS_JS));
+    const rawRows = await awaitCancellable(run, page.evaluate(extractTrendsRows));
+    const rows = Array.isArray(rawRows) ? rawRows : [];
     log(send, step, `Page ${pageNum}/${pagesToScrape} for '${verticalLabel}': extracted ${rows.length} rows`);
+
+    if (rows.length === 0) {
+      log(send, step, `No rows found on page ${pageNum}. Ending extraction for '${verticalLabel}'.`);
+      break;
+    }
+
     allRows.push(...rows);
 
     if (pageNum < pagesToScrape) {
-      const firstTermBefore = rows.length > 0 ? rows[0].term : null;
+      const firstTermBefore = rows[0].term;
       const maxAttempts = 3;
       let lastErr = null;
 
@@ -121,7 +168,7 @@ async function scrapeVertical(page, send, run, verticalSlug, pagesToScrape) {
           await page.waitForFunction(
             (prevTerm) => {
               const el = document.querySelector(
-                'table[data-testid="grid-component"] tbody tr td .styles__ProdTitle-sc-jw88a7-0'
+                'table[data-testid="grid-component"] tbody tr td [class*="ProdTitle"], table[data-testid="grid-component"] tbody tr td'
               );
               return el && el.textContent.trim() !== prevTerm;
             },
