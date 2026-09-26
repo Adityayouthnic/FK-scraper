@@ -24,7 +24,11 @@ const {
   stopScreencast,
   clearActiveRun,
 } = require('./runner');
-const { getOrCreateLiveSession, ensureAuthenticated } = require('./sessionManager');
+const {
+  getOrCreateLiveSession,
+  ensureAuthenticated,
+  markSessionUnauthenticated,
+} = require('./sessionManager');
 
 // slug (used in the page URL) -> display label (matches the sheet's existing casing)
 const VERTICALS = {
@@ -102,41 +106,20 @@ async function scrapeVertical(page, send, run, verticalSlug, pagesToScrape) {
   const url = `${baseUrl}?businessVertical=ALL&section=search_trends&selectedVertical=${verticalSlug}`;
 
   log(send, step, `Navigating to Search Trends for '${verticalLabel}'`);
-
-  const currentUrl = page.url();
-  if (currentUrl === url) {
-    log(send, step, `Already on target vertical URL. Refreshing view for '${verticalLabel}'...`);
-    await awaitCancellable(run, page.reload({ waitUntil: 'domcontentloaded' }));
-  } else if (currentUrl.includes('seller-insights')) {
-    // Single Page App hash router: navigate and reload to guarantee fresh React mount for the vertical
-    await awaitCancellable(run, page.goto(url, { waitUntil: 'domcontentloaded' }));
-    await awaitCancellable(run, page.reload({ waitUntil: 'domcontentloaded' }));
-  } else {
-    await awaitCancellable(run, page.goto(url, { waitUntil: 'domcontentloaded' }));
-  }
+  await awaitCancellable(run, page.goto(url, { waitUntil: 'domcontentloaded' }));
 
   try {
     await awaitCancellable(run, page.waitForLoadState('networkidle', { timeout: 15000 }));
   } catch {
     // networkidle is best-effort
   }
-  await awaitCancellable(run, page.waitForTimeout(2000));
+  await awaitCancellable(run, page.waitForTimeout(3000));
 
   log(send, step, `Waiting for trends grid to load for '${verticalLabel}'...`);
-  try {
-    await awaitCancellable(
-      run,
-      page.waitForSelector('table[data-testid="grid-component"] tbody tr', { timeout: settings.ELEMENT_TIMEOUT_MS })
-    );
-  } catch (waitErr) {
-    log(send, step, `Grid component not ready yet, attempting page refresh for '${verticalLabel}'...`);
-    await awaitCancellable(run, page.reload({ waitUntil: 'domcontentloaded' }));
-    await awaitCancellable(run, page.waitForTimeout(3000));
-    await awaitCancellable(
-      run,
-      page.waitForSelector('table[data-testid="grid-component"] tbody tr', { timeout: settings.ELEMENT_TIMEOUT_MS })
-    );
-  }
+  await awaitCancellable(
+    run,
+    page.waitForSelector('table[data-testid="grid-component"] tbody tr', { timeout: settings.ELEMENT_TIMEOUT_MS })
+  );
   await awaitCancellable(run, page.waitForTimeout(800));
 
   const allRows = [];
@@ -237,9 +220,8 @@ async function runTrendsJob(send, options = {}) {
     // Attach real-time screencast so the user sees the live session immediately
     client = await setupScreencast(run, context, page, send);
 
-    // Verify authentication ONCE: if already on #dashboard, skips login immediately
-    const checkUrl = settings.SELLER_INSIGHTS_URL || 'https://seller.flipkart.com/index.html#dashboard/growth/seller-insights';
-    await ensureAuthenticated(page, context, send, run, checkUrl);
+    // Verify authentication: if already logged in, skips login immediately; if not, performs login
+    await ensureAuthenticated(page, context, send, run, sessionInfo);
 
     // Determine target verticals & pages
     const pagesPerVertical = Math.max(1, parseInt(options.pages, 10) || settings.TRENDS_PAGES_PER_VERTICAL || 10);
@@ -296,6 +278,9 @@ async function runTrendsJob(send, options = {}) {
     };
   } catch (err) {
     if (run.cancelled || err.code === 'RUN_CANCELLED') throw new RunCancelledError();
+    // On unexpected failure (e.g. grid timeout due to session drop), mark unauthenticated
+    // so the next run re-authenticates rather than assuming the session is still good
+    markSessionUnauthenticated();
     throw err;
   } finally {
     await stopScreencast(client);

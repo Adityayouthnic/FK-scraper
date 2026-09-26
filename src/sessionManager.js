@@ -20,6 +20,8 @@ const {
 let liveBrowser = null;
 let liveContext = null;
 let livePage = null;
+let isLiveLoggedIn = false;
+let currentSavedSession = null;
 
 function hasActiveLiveSession() {
   return Boolean(
@@ -32,6 +34,10 @@ function hasActiveLiveSession() {
 
 function getLiveSession() {
   return { browser: liveBrowser, context: liveContext, page: livePage };
+}
+
+function markSessionUnauthenticated() {
+  isLiveLoggedIn = false;
 }
 
 async function closeLiveSession() {
@@ -49,6 +55,8 @@ async function closeLiveSession() {
   liveBrowser = null;
   liveContext = null;
   livePage = null;
+  isLiveLoggedIn = false;
+  currentSavedSession = null;
   clearActivePage();
 }
 
@@ -61,14 +69,22 @@ async function getOrCreateLiveSession(send, run) {
     log(send, 'session', 'Reusing active live browser session.');
     run.browser = liveBrowser;
     setActivePage(livePage);
-    return { browser: liveBrowser, context: liveContext, page: livePage, isReused: true };
+    return {
+      browser: liveBrowser,
+      context: liveContext,
+      page: livePage,
+      isReused: true,
+      hasSavedSession: Boolean(currentSavedSession),
+    };
   }
 
-  // If there's any stale closed/disconnected instance, clean it up
+  // Clean up any stale disconnected instance
   await closeLiveSession();
 
   log(send, 'session', 'Starting live browser session...');
   const savedSession = await awaitCancellable(run, loadSession(send));
+  currentSavedSession = savedSession;
+
   const launched = await awaitCancellable(
     run,
     launchBrowser(send, { storageState: savedSession, useStealth: true }),
@@ -83,62 +99,87 @@ async function getOrCreateLiveSession(send, run) {
     liveBrowser = null;
     liveContext = null;
     livePage = null;
+    isLiveLoggedIn = false;
+    currentSavedSession = null;
     clearActivePage();
   });
 
   livePage = await awaitCancellable(run, liveContext.newPage(), (late) => late?.close().catch(() => {}));
   setActivePage(livePage);
 
-  return { browser: liveBrowser, context: liveContext, page: livePage, isReused: false };
+  return {
+    browser: liveBrowser,
+    context: liveContext,
+    page: livePage,
+    isReused: false,
+    hasSavedSession: Boolean(savedSession),
+  };
 }
 
 /**
- * Verifies if the live page is already authenticated on the Flipkart seller dashboard.
- * If authenticated, skips the login flow completely.
- * Only if not logged in does it execute the login flow and persist the session.
+ * Verifies if the live page is already authenticated on Flipkart.
+ * - If this live session already completed login earlier, reuses it immediately.
+ * - If there is no saved session, initiates the Flipkart seller login flow.
+ * - If a saved session exists, tests whether it redirects to dashboard; if not, logs in fresh.
  */
-async function ensureAuthenticated(page, context, send, run, defaultCheckUrl) {
+async function ensureAuthenticated(page, context, send, run, sessionInfo = {}) {
   const step = 'session.auth';
 
-  // 1. Check if the page is already on a dashboard URL
-  try {
-    const currentUrl = page.url();
-    if (currentUrl && currentUrl.includes('#dashboard')) {
-      const passwordFields = await page.locator('input[type="password"]').count().catch(() => 0);
-      if (passwordFields === 0) {
-        log(send, step, `Live browser session is already logged in (${currentUrl}) — skipping login.`);
+  // 1. If this exact live browser session already completed login in a prior run, reuse it!
+  if (isLiveLoggedIn && sessionInfo.isReused) {
+    try {
+      const isLoginBtn = await page.locator('button:has-text("Login")').count().catch(() => 0);
+      const isPass = await page.locator('input[type="password"]').count().catch(() => 0);
+      const currentUrl = page.url();
+      if (isLoginBtn === 0 && isPass === 0 && currentUrl.includes('seller.flipkart.com')) {
+        log(send, step, `Live browser session is authenticated (${currentUrl}) — skipping login.`);
         return true;
       }
-    }
-  } catch (err) {
-    if (run.cancelled) throw err;
+    } catch {}
+    warn(send, step, 'Live session lost authentication — initiating re-login.');
+    isLiveLoggedIn = false;
   }
 
-  // 2. If not on #dashboard, check if navigating to the portal opens dashboard directly
-  const checkUrl = defaultCheckUrl || settings.SELLER_INSIGHTS_URL || 'https://seller.flipkart.com/index.html#dashboard/growth/seller-insights';
+  // 2. If NO saved session exists (e.g. brand new container boot):
+  // We MUST perform login directly! We cannot assume an empty browser is logged in.
+  if (!sessionInfo.hasSavedSession) {
+    log(send, 'login', 'No saved session found. Initiating Flipkart seller login flow...');
+    await awaitCancellable(run, login(page, send));
+    await awaitCancellable(run, page.waitForTimeout(3000));
+    await awaitCancellable(run, saveSession(context, send));
+    isLiveLoggedIn = true;
+    log(send, step, 'Login complete! Live session is now active and saved.');
+    return true;
+  }
+
+  // 3. A saved session WAS loaded: verify whether the cookies are actually valid on Flipkart.
   try {
-    log(send, step, `Checking session authentication on seller portal (${checkUrl})...`);
-    await awaitCancellable(run, page.goto(checkUrl, { waitUntil: 'domcontentloaded' }));
-    await awaitCancellable(run, page.waitForTimeout(3500));
+    log(send, step, 'Validating saved session on Flipkart seller portal...');
+    await awaitCancellable(run, page.goto('https://seller.flipkart.com/', { waitUntil: 'domcontentloaded' }));
+    await awaitCancellable(run, page.waitForTimeout(4000));
 
     const currentUrl = page.url();
-    const hasDashboard = currentUrl.includes('#dashboard');
-    const passwordFields = await page.locator('input[type="password"]').count().catch(() => 0);
+    const hasLoginButton = await page.locator('button:has-text("Login")').count().catch(() => 0);
 
-    if (hasDashboard && passwordFields === 0) {
-      log(send, step, `Session verified and active (${currentUrl}) — skipping login.`);
+    // When valid, Flipkart automatically redirects from landing page into #dashboard
+    if (currentUrl.includes('#dashboard') && hasLoginButton === 0) {
+      isLiveLoggedIn = true;
+      log(send, step, `Saved session is valid (redirected to ${currentUrl}) — skipping login.`);
       return true;
     }
+
+    warn(send, step, `Saved session expired or invalid (current URL: ${currentUrl}) — logging in fresh.`);
   } catch (checkErr) {
     if (run.cancelled) throw checkErr;
-    warn(send, step, `Session check note (${checkErr.message}) — proceeding to verify login form.`);
+    warn(send, step, `Session validation notice (${checkErr.message}) — logging in fresh.`);
   }
 
-  // 3. Not authenticated: perform login flow once
-  log(send, 'login', 'Initiating Flipkart seller login flow (login required once)...');
+  // 4. Saved session check failed/expired: perform full login flow
+  log(send, 'login', 'Initiating Flipkart seller login flow...');
   await awaitCancellable(run, login(page, send));
   await awaitCancellable(run, page.waitForTimeout(3000));
   await awaitCancellable(run, saveSession(context, send));
+  isLiveLoggedIn = true;
   log(send, step, 'Login complete! Live session is now active and saved.');
   return true;
 }
@@ -149,4 +190,5 @@ module.exports = {
   closeLiveSession,
   getOrCreateLiveSession,
   ensureAuthenticated,
+  markSessionUnauthenticated,
 };

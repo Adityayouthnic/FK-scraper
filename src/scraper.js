@@ -28,7 +28,7 @@ async function runScrapeJob(send) {
 
     client = await setupScreencast(run, context, page, send);
 
-    await ensureAuthenticated(page, context, send, run, settings.WALLET_URL);
+    await ensureAuthenticated(page, context, send, run, sessionInfo);
 
     if (!page.url().includes('dashboard/ads/wallet/summary')) {
       await awaitCancellable(run, navigateToWallet(page, send));
