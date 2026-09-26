@@ -43,7 +43,6 @@ function loadCredentialsFile() {
     zeptoNotifyTo: fileData.zeptoNotifyTo || process.env.NOTIFY_TO || '',
     zeptoSheetId: fileData.zeptoSheetId || process.env.GSHEET_ID || '',
     zeptoHeaded: fileData.zeptoHeaded !== undefined ? fileData.zeptoHeaded : (process.env.HEADED === '1'),
-    zeptoPythonPath: fileData.zeptoPythonPath || process.env.PYTHON_PATH || '',
   };
 
   // Sync to runtime settings
@@ -90,7 +89,6 @@ function getRawZeptoCredentials() {
     notifyTo: creds.zeptoNotifyTo,
     sheetId: creds.zeptoSheetId,
     headed: creds.zeptoHeaded ? '1' : '0',
-    pythonPath: creds.zeptoPythonPath,
   };
 }
 
@@ -119,7 +117,6 @@ function getSafeCredentials() {
     zeptoNotifyTo: creds.zeptoNotifyTo || '',
     zeptoSheetId: creds.zeptoSheetId || '',
     zeptoHeaded: Boolean(creds.zeptoHeaded),
-    zeptoPythonPath: creds.zeptoPythonPath || '',
   };
 }
 
@@ -199,11 +196,6 @@ function updateCredentials(updates = {}) {
   if (updates.zeptoHeaded !== undefined) {
     creds.zeptoHeaded = Boolean(updates.zeptoHeaded);
     process.env.HEADED = creds.zeptoHeaded ? '1' : '0';
-  }
-
-  if (typeof updates.zeptoPythonPath === 'string') {
-    creds.zeptoPythonPath = updates.zeptoPythonPath.trim();
-    process.env.PYTHON_PATH = creds.zeptoPythonPath;
   }
 
   saveCredentialsFile();

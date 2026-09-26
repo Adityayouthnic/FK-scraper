@@ -11,11 +11,3 @@ service-account.json
 *.log
 downloads/
 data/
-
-# Zepto runtime artifacts and secrets
-zepto_engine/secrets/
-zepto_engine/downloads/
-zepto_engine/logs/
-zepto_engine/__pycache__/
-zepto_engine/.venv/
-zepto_engine/.env

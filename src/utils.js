@@ -14,15 +14,29 @@ function sleep(ms) {
 }
 
 function log(send, step, message) {
-  const line = `[${step}] ${message}`;
+  let line;
+  if (message === undefined) {
+    line = typeof step === 'string' ? step : JSON.stringify(step);
+  } else {
+    line = `[${step}] ${message}`;
+  }
   console.log(line);
-  send('log', { message: line });
+  if (typeof send === 'function') {
+    send('log', { message: line });
+  }
 }
 
 function warn(send, step, message) {
-  const line = `[${step}] WARNING: ${message}`;
+  let line;
+  if (message === undefined) {
+    line = typeof step === 'string' ? `WARNING: ${step}` : `WARNING: ${JSON.stringify(step)}`;
+  } else {
+    line = `[${step}] WARNING: ${message}`;
+  }
   console.warn(line);
-  send('log', { message: line });
+  if (typeof send === 'function') {
+    send('log', { message: line });
+  }
 }
 
 function isXPath(selector) {

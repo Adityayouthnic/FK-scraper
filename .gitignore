@@ -4,11 +4,5 @@ node_modules/
 .DS_Store
 service-account.json
 data/
-
-# Zepto runtime artifacts and secrets
-zepto_engine/secrets/
-zepto_engine/downloads/
-zepto_engine/logs/
-zepto_engine/__pycache__/
-zepto_engine/.venv/
-zepto_engine/.env
+downloads/
+secrets/
