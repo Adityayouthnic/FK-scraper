@@ -1,6 +1,7 @@
 const runBtn = document.getElementById('run-btn');
 const statusText = document.getElementById('status-text');
 const statusPill = document.getElementById('status-pill');
+const statusDot = document.getElementById('status-dot');
 const liveView = document.getElementById('live-view');
 const viewPlaceholder = document.getElementById('view-placeholder');
 const liveBadge = document.getElementById('live-badge');
@@ -11,6 +12,8 @@ const statRowsAdded = document.getElementById('stat-rows-added');
 const statLastResult = document.getElementById('stat-last-result');
 const verticalSelect = document.getElementById('vertical-select');
 const pagesInput = document.getElementById('pages-input');
+const clearLogBtn = document.getElementById('clear-log-btn');
+const resetSessionBtn = document.getElementById('reset-session-btn');
 const runBtnLabel = runBtn.querySelector('span');
 
 const VIEWPORT_WIDTH = 1024;
@@ -31,16 +34,17 @@ function appendLog(message, kind) {
   const tag = LOG_TAGS[cls];
   const line = document.createElement('div');
   line.className = `log-line ${cls}`;
-  line.innerHTML = `<span class="ts">${time}</span> <span class="tag">[${tag}]</span> `;
-  line.append(message);
+  line.innerHTML = `<span class="ts">${time}</span><span class="tag">[${tag}]</span>`;
+  line.append(` ${message}`);
   log.appendChild(line);
-  log.scrollTop = log.scrollHeight;
+  const container = log.parentElement;
+  if (container) container.scrollTop = container.scrollHeight;
 }
 
 function classifyLog(message) {
   const lower = message.toLowerCase();
   if (lower.startsWith('error') || lower.includes('failed') || lower.includes('critical')) return 'error';
-  if (lower.includes('detected') || lower.includes('complete') || lower.includes('done') || lower.includes('pushed')) return 'done';
+  if (lower.includes('detected') || lower.includes('complete') || lower.includes('done') || lower.includes('pushed') || lower.includes('succeeded')) return 'done';
   return 'info';
 }
 
@@ -48,32 +52,65 @@ const STATUS_LABELS = { idle: 'Idle', running: 'Running...', done: 'Done', error
 
 function setStatus(state) {
   isRunning = state === 'running';
-  statusPill.className = `status-pill status-${state}`;
   const label = STATUS_LABELS[state] || state;
   statusText.textContent = label;
   statStatus.textContent = label;
   runBtn.disabled = false;
   runBtnLabel.textContent = isRunning ? 'Stop Scraper' : 'Run Scraper';
-  runBtn.classList.toggle('run-btn-stop', isRunning);
-  liveBadge.classList.toggle('active', isRunning);
-  if (!isRunning) {
+
+  // Status pill styling
+  if (state === 'running') {
+    statusPill.className = 'inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200';
+    if (statusDot) statusDot.className = 'w-2 h-2 rounded-full bg-amber-500 animate-pulse';
+  } else if (state === 'done') {
+    statusPill.className = 'inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200';
+    if (statusDot) statusDot.className = 'w-2 h-2 rounded-full bg-emerald-500';
+  } else if (state === 'error') {
+    statusPill.className = 'inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200';
+    if (statusDot) statusDot.className = 'w-2 h-2 rounded-full bg-rose-500';
+  } else {
+    statusPill.className = 'inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-600 border border-slate-200';
+    if (statusDot) statusDot.className = 'w-2 h-2 rounded-full bg-slate-400';
+  }
+
+  // Run button styling
+  const svg = runBtn.querySelector('svg');
+  if (isRunning) {
+    runBtn.className = 'inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-rose-600 hover:bg-rose-700 active:scale-[0.98] text-white text-sm font-semibold shadow-sm transition-all focus:outline-none focus:ring-2 focus:ring-rose-500 focus:ring-offset-2';
+    if (svg) svg.innerHTML = '<use href="#icon-stop"/>';
+  } else {
+    runBtn.className = 'inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-brand-600 hover:bg-brand-700 active:scale-[0.98] text-white text-sm font-semibold shadow-sm transition-all focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2';
+    if (svg) svg.innerHTML = '<use href="#icon-play"/>';
+  }
+
+  // Live badge styling
+  if (isRunning) {
+    liveBadge.className = 'inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-rose-600';
+    liveBadge.innerHTML = '<span class="relative flex h-2 w-2"><span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span><span class="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span></span><span>LIVE</span>';
+  } else {
+    liveBadge.className = 'inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-slate-400';
+    liveBadge.innerHTML = '<span class="relative flex h-2 w-2"><span class="relative inline-flex rounded-full h-2 w-2 bg-slate-400"></span></span><span>Standby</span>';
     if (!liveView.src) {
       liveView.style.display = 'none';
       viewPlaceholder.style.display = 'flex';
     }
-    verticalSelect.disabled = false;
-    pagesInput.disabled = false;
-  } else {
-    verticalSelect.disabled = true;
-    pagesInput.disabled = true;
   }
+
+  verticalSelect.disabled = isRunning;
+  pagesInput.disabled = isRunning;
 }
 
 ws.addEventListener('open', () => appendLog('Connected to server. Ready to scrape Search Trends.'));
 ws.addEventListener('close', () => appendLog('Disconnected from server.', 'error'));
 
 ws.addEventListener('message', (event) => {
-  const msg = JSON.parse(event.data);
+  let msg;
+  try {
+    msg = JSON.parse(event.data);
+  } catch {
+    return;
+  }
+
   switch (msg.type) {
     case 'log':
       appendLog(msg.message, classifyLog(msg.message));
@@ -139,6 +176,21 @@ runBtn.addEventListener('click', () => {
   }));
 });
 
+if (clearLogBtn) {
+  clearLogBtn.addEventListener('click', () => {
+    log.innerHTML = '';
+  });
+}
+
+if (resetSessionBtn) {
+  resetSessionBtn.addEventListener('click', () => {
+    if (confirm('Close and reset the live browser session? Next run will start a clean browser.')) {
+      ws.send(JSON.stringify({ type: 'reset_session' }));
+      appendLog('Live browser reset requested.', 'info');
+    }
+  });
+}
+
 // --- Relay mouse/keyboard into the remote browser via the live view ---
 function sendInput(payload) {
   if (!isRunning || ws.readyState !== WebSocket.OPEN) return;
@@ -202,7 +254,6 @@ liveView.addEventListener('wheel', (e) => {
 
 window.addEventListener('keydown', (e) => {
   if (!isRunning) return;
-  // Don't intercept typing when the user is editing the pages input or select
   if (document.activeElement === pagesInput || document.activeElement === verticalSelect) return;
   e.preventDefault();
   sendInput({ event: 'keydown', key: e.key });

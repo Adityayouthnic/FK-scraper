@@ -1,119 +1,371 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="h-full bg-slate-50">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Wallet Scraper</title>
-<link rel="preconnect" href="https://fonts.googleapis.com" />
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;600&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@450;600&display=swap" rel="stylesheet" />
-<link rel="stylesheet" href="/styles.css" />
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Flipkart Ads Wallet &middot; Scraper Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#eef2ff',
+              100: '#e0e7ff',
+              200: '#c7d2fe',
+              500: '#6366f1',
+              600: '#4f46e5',
+              700: '#4338ca',
+              800: '#3730a3',
+              900: '#312e81',
+            }
+          },
+          fontFamily: {
+            sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
+            mono: ['"JetBrains Mono"', 'monospace'],
+          }
+        }
+      }
+    };
+  </script>
+  <link rel="stylesheet" href="/styles.css" />
 </head>
-<body>
+<body class="h-full flex overflow-hidden text-slate-800 antialiased font-sans">
+
+  <!-- SVG Icon Library -->
   <svg style="display:none" aria-hidden="true">
-    <symbol id="icon-settings" viewBox="0 0 24 24">
-      <line x1="4" y1="6" x2="20" y2="6"/><circle class="icon-solid" cx="14" cy="6" r="2"/>
-      <line x1="4" y1="12" x2="20" y2="12"/><circle class="icon-solid" cx="8" cy="12" r="2"/>
-      <line x1="4" y1="18" x2="20" y2="18"/><circle class="icon-solid" cx="16" cy="18" r="2"/>
-    </symbol>
-    <symbol id="icon-dashboard" viewBox="0 0 24 24">
-      <rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/>
-      <rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>
-    </symbol>
-    <symbol id="icon-logs" viewBox="0 0 24 24">
-      <rect x="3" y="4" width="18" height="16" rx="2"/>
-      <path d="M7 9l3 3-3 3"/><line x1="12" y1="15" x2="17" y2="15"/>
-    </symbol>
-    <symbol id="icon-wallet" viewBox="0 0 24 24">
+    <symbol id="icon-wallet" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <path d="M3 7a2 2 0 0 1 2-2h13a1 1 0 0 1 1 1v2"/>
       <path d="M3 7v10a2 2 0 0 0 2 2h14a1 1 0 0 0 1-1v-8a1 1 0 0 0-1-1H5a2 2 0 0 1-2-2z"/>
-      <circle class="icon-solid" cx="16" cy="14" r="1.4"/>
+      <circle cx="16" cy="14" r="1.5" fill="currentColor"/>
     </symbol>
-    <symbol id="icon-play" viewBox="0 0 24 24">
-      <path class="icon-solid" d="M8 5v14l11-7z"/>
-    </symbol>
-    <symbol id="icon-browser" viewBox="0 0 24 24">
-      <rect x="3" y="5" width="18" height="14" rx="2"/>
-      <line x1="3" y1="9" x2="21" y2="9"/>
-    </symbol>
-    <symbol id="icon-trending" viewBox="0 0 24 24">
+    <symbol id="icon-trending" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/>
       <polyline points="17 6 23 6 23 12"/>
     </symbol>
+    <symbol id="icon-clock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="10"/>
+      <polyline points="12 6 12 12 16 14"/>
+    </symbol>
+    <symbol id="icon-play" viewBox="0 0 24 24" fill="currentColor">
+      <polygon points="6 4 20 12 6 20 6 4"/>
+    </symbol>
+    <symbol id="icon-stop" viewBox="0 0 24 24" fill="currentColor">
+      <rect x="6" y="6" width="12" height="12" rx="2"/>
+    </symbol>
+    <symbol id="icon-refresh" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+    </symbol>
+    <symbol id="icon-browser" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="3" y="4" width="18" height="16" rx="2"/>
+      <line x1="3" y1="9" x2="21" y2="9"/>
+      <line x1="9" y1="20" x2="9" y2="9"/>
+    </symbol>
+    <symbol id="icon-terminal" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="4 17 10 11 4 5"/>
+      <line x1="12" y1="19" x2="20" y2="19"/>
+    </symbol>
+    <symbol id="icon-clear" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+    </symbol>
+    <symbol id="icon-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="20 6 9 17 4 12"/>
+    </symbol>
   </svg>
 
-  <aside class="sidebar-slim">
-    <span class="brand-mark">FK</span>
-    <nav class="sidebar-slim-nav">
-      <a class="slim-link active" href="/" title="Wallet Scraper"><svg class="icon"><use href="#icon-wallet"/></svg></a>
-      <a class="slim-link" href="/trends" title="Search Trends"><svg class="icon"><use href="#icon-trending"/></svg></a>
+  <!-- Slim Sidebar Navigation Rail -->
+  <aside class="w-16 flex-shrink-0 bg-white border-r border-slate-200/80 flex flex-col items-center py-4 z-20 shadow-[1px_0_3px_rgba(0,0,0,0.02)]">
+    <!-- Brand Mark -->
+    <a href="/" class="w-10 h-10 rounded-xl bg-gradient-to-tr from-brand-600 to-indigo-500 text-white font-bold flex items-center justify-center shadow-md shadow-brand-500/20 mb-8 transition-transform hover:scale-105" title="Flipkart Scraper Suite">
+      FK
+    </a>
+
+    <!-- Nav Items -->
+    <nav class="flex flex-col gap-3 w-full px-2">
+      <a href="/" class="relative group flex items-center justify-center w-12 h-12 rounded-xl bg-brand-50 text-brand-600 shadow-sm transition-all" title="Wallet Scraper (Daily)">
+        <svg class="w-5 h-5"><use href="#icon-wallet"/></svg>
+        <span class="absolute left-16 bg-slate-900 text-white text-xs px-2.5 py-1 rounded-md opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity whitespace-nowrap shadow-lg z-50">
+          Wallet Scraper
+        </span>
+      </a>
+
+      <a href="/trends" class="relative group flex items-center justify-center w-12 h-12 rounded-xl text-slate-400 hover:text-brand-600 hover:bg-slate-50 transition-all" title="Search Trends (Weekly)">
+        <svg class="w-5 h-5"><use href="#icon-trending"/></svg>
+        <span class="absolute left-16 bg-slate-900 text-white text-xs px-2.5 py-1 rounded-md opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity whitespace-nowrap shadow-lg z-50">
+          Search Trends
+        </span>
+      </a>
     </nav>
-    <div class="sidebar-slim-footer">
-      <a class="slim-link" href="#" title="Settings"><svg class="icon"><use href="#icon-settings"/></svg></a>
+
+    <!-- Footer Controls -->
+    <div class="mt-auto flex flex-col gap-3 w-full px-2">
+      <!-- Schedule Settings Trigger -->
+      <button id="open-schedule-btn" type="button" class="relative group flex items-center justify-center w-12 h-12 rounded-xl text-slate-400 hover:text-brand-600 hover:bg-slate-50 transition-all" title="Schedule Settings">
+        <svg class="w-5 h-5"><use href="#icon-clock"/></svg>
+        <span class="absolute left-16 bg-slate-900 text-white text-xs px-2.5 py-1 rounded-md opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity whitespace-nowrap shadow-lg z-50">
+          Schedule Settings
+        </span>
+      </button>
+
+      <!-- Reset Session Trigger -->
+      <button id="reset-session-btn" type="button" class="relative group flex items-center justify-center w-12 h-12 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-all" title="Reset Browser Session">
+        <svg class="w-5 h-5"><use href="#icon-refresh"/></svg>
+        <span class="absolute left-16 bg-slate-900 text-white text-xs px-2.5 py-1 rounded-md opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity whitespace-nowrap shadow-lg z-50">
+          Reset Live Session
+        </span>
+      </button>
     </div>
   </aside>
 
-  <div class="app-shell">
-    <header class="topbar">
-      <div class="topbar-left">
-        <span class="topbar-title">Wallet Scraper</span>
-        <span class="topbar-sep">/</span>
-        <span class="topbar-subtitle">Flipkart Seller &middot; Ads Wallet</span>
-        <div id="status-pill" class="status-pill status-idle">
-          <span class="status-dot"></span>
+  <!-- Main App Shell -->
+  <div class="flex-1 flex flex-col min-w-0 overflow-hidden">
+
+    <!-- Topbar Header -->
+    <header class="h-16 flex-shrink-0 bg-white border-b border-slate-200/80 px-6 flex items-center justify-between gap-4 z-10">
+      
+      <!-- Left: Title, Breadcrumb, Status Pill -->
+      <div class="flex items-center gap-3 min-w-0">
+        <div class="flex items-center gap-2">
+          <span class="font-bold text-slate-900 text-base tracking-tight">Flipkart Ads Wallet</span>
+          <span class="text-slate-300 font-normal">/</span>
+          <span class="text-xs font-medium text-slate-500 hidden sm:inline">Daily Ledger Scraper</span>
+        </div>
+
+        <!-- Engine Status Pill -->
+        <div id="status-pill" class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-600 border border-slate-200">
+          <span class="w-2 h-2 rounded-full bg-slate-400" id="status-dot"></span>
           <span id="status-text">Idle</span>
         </div>
+
+        <!-- Schedule Badge (Clickable) -->
+        <button id="schedule-badge" type="button" class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-50 text-indigo-700 border border-indigo-200/80 hover:bg-indigo-100 transition-colors" title="Click to view and adjust schedule">
+          <svg class="w-3.5 h-3.5"><use href="#icon-clock"/></svg>
+          <span id="schedule-badge-text">Auto: Daily 07:00 AM IST</span>
+        </button>
       </div>
-      <div class="topbar-right">
-        <div class="header-stats">
-          <div class="header-stat">
-            <span class="header-stat-label">Status</span>
-            <span class="header-stat-value" id="stat-status">Idle</span>
+
+      <!-- Right: Stat Metrics & Run Action -->
+      <div class="flex items-center gap-6 flex-shrink-0">
+        
+        <!-- Header Metrics -->
+        <div class="hidden md:flex items-center gap-5 text-xs">
+          <div class="flex flex-col">
+            <span class="text-[10px] uppercase tracking-wider font-semibold text-slate-400">Status</span>
+            <span id="stat-status" class="font-semibold text-slate-700">Idle</span>
           </div>
-          <div class="header-divider"></div>
-          <div class="header-stat">
-            <span class="header-stat-label">Last Run</span>
-            <span class="header-stat-value" id="stat-last-run">&mdash;</span>
+          <div class="w-px h-6 bg-slate-200"></div>
+          <div class="flex flex-col">
+            <span class="text-[10px] uppercase tracking-wider font-semibold text-slate-400">Last Run</span>
+            <span id="stat-last-run" class="font-semibold text-slate-700">&mdash;</span>
           </div>
-          <div class="header-divider"></div>
-          <div class="header-stat">
-            <span class="header-stat-label">Result</span>
-            <span class="header-stat-value" id="stat-last-result">&mdash;</span>
+          <div class="w-px h-6 bg-slate-200"></div>
+          <div class="flex flex-col">
+            <span class="text-[10px] uppercase tracking-wider font-semibold text-slate-400">Result</span>
+            <span id="stat-last-result" class="font-semibold text-slate-700">&mdash;</span>
           </div>
         </div>
-        <button id="run-btn" class="run-btn" type="button">
-          <svg class="icon icon-solid"><use href="#icon-play"/></svg>
+
+        <!-- Run / Stop Button -->
+        <button id="run-btn" type="button" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-brand-600 hover:bg-brand-700 active:scale-[0.98] text-white text-sm font-semibold shadow-sm transition-all focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2">
+          <svg class="w-4 h-4"><use href="#icon-play"/></svg>
           <span>Run Scraper</span>
         </button>
       </div>
     </header>
 
-    <main class="app-main">
-      <div class="workspace-grid">
-        <section class="panel">
-          <div class="panel-header">
-            <div class="window-dots"><span></span><span></span><span></span></div>
-            <span id="live-badge" class="live-badge"><span class="ping-dot"></span>Live View</span>
-          </div>
-          <div class="view-wrap">
-            <img id="live-view" alt="The live browser view appears here while a run is in progress. Click and type on it to control the remote browser." draggable="false" />
-            <div id="view-placeholder" class="view-placeholder-content">
-              <svg class="icon"><use href="#icon-browser"/></svg>
-              <p>Live browser view will appear here while running. You can click and type directly into it — e.g. to solve a captcha or click Login.</p>
+    <!-- Main Workspace (Split Grid) -->
+    <main class="flex-1 p-5 overflow-auto bg-slate-50/60">
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-5 h-full min-h-[580px]">
+
+        <!-- Left: Live Browser Session (7 Cols) -->
+        <section class="lg:col-span-7 flex flex-col bg-white rounded-xl border border-slate-200/90 shadow-sm overflow-hidden min-h-[460px]">
+          <!-- Panel Header -->
+          <div class="h-10 px-4 bg-slate-50/90 border-b border-slate-200 flex items-center justify-between flex-shrink-0">
+            <div class="flex items-center gap-2">
+              <div class="flex gap-1.5">
+                <span class="w-2.5 h-2.5 rounded-full bg-rose-400/90"></span>
+                <span class="w-2.5 h-2.5 rounded-full bg-amber-400/90"></span>
+                <span class="w-2.5 h-2.5 rounded-full bg-emerald-400/90"></span>
+              </div>
+              <span class="ml-2 text-xs font-semibold text-slate-600">Flipkart Seller Browser</span>
             </div>
+
+            <div id="live-badge" class="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-slate-400">
+              <span class="relative flex h-2 w-2">
+                <span class="live-ping absolute inline-flex h-full w-full rounded-full bg-slate-300 opacity-75"></span>
+                <span class="relative inline-flex rounded-full h-2 w-2 bg-slate-400"></span>
+              </span>
+              <span>Standby</span>
+            </div>
+          </div>
+
+          <!-- Live View Canvas / Interactive Stream -->
+          <div class="relative flex-1 flex items-center justify-center overflow-hidden canvas-grid-pattern p-3 text-center">
+            <img id="live-view" alt="Interactive live browser viewport" draggable="false" />
+            
+            <div id="view-placeholder" class="flex flex-col items-center justify-center p-6 text-center max-w-sm">
+              <div class="w-14 h-14 rounded-2xl bg-indigo-50 flex items-center justify-center text-brand-600 mb-4 shadow-sm border border-indigo-100">
+                <svg class="w-7 h-7"><use href="#icon-browser"/></svg>
+              </div>
+              <h4 class="text-sm font-semibold text-slate-800 mb-1">Live View Ready</h4>
+              <p class="text-xs text-slate-500 leading-relaxed">
+                When a run is started, the live browser stream will appear here. You can click and type directly to solve OTPs or CAPTCHAs.
+              </p>
+            </div>
+          </div>
+
+          <!-- Panel Footer Status Bar -->
+          <div class="h-8 px-4 bg-slate-50 border-t border-slate-200/80 flex items-center justify-between text-[11px] text-slate-500">
+            <span>Viewport: 1024 &times; 768 (Headless Chromium)</span>
+            <span class="text-slate-400">Interactive Relay Active</span>
           </div>
         </section>
 
-        <section class="panel">
-          <div class="panel-header">
-            <span class="header-stat-label" style="font-size:12px;text-transform:none;letter-spacing:normal;color:var(--text-secondary);font-weight:600">Activity Log</span>
+        <!-- Right: Terminal Activity Log (5 Cols) -->
+        <section class="lg:col-span-5 flex flex-col bg-slate-950 rounded-xl border border-slate-900 shadow-sm overflow-hidden min-h-[460px]">
+          <!-- Terminal Header -->
+          <div class="h-10 px-4 bg-slate-900/90 border-b border-slate-800/80 flex items-center justify-between flex-shrink-0">
+            <div class="flex items-center gap-2 text-slate-300 text-xs font-semibold">
+              <svg class="w-4 h-4 text-brand-500"><use href="#icon-terminal"/></svg>
+              <span>Activity Terminal</span>
+            </div>
+            <button id="clear-log-btn" type="button" class="text-slate-400 hover:text-slate-200 transition-colors p-1 rounded hover:bg-slate-800 text-xs flex items-center gap-1" title="Clear Terminal Log">
+              <svg class="w-3.5 h-3.5"><use href="#icon-clear"/></svg>
+              <span class="text-[11px]">Clear</span>
+            </button>
           </div>
-          <pre id="log"></pre>
+
+          <!-- Terminal Content Area -->
+          <div class="flex-1 p-4 overflow-y-auto custom-scrollbar font-mono text-xs text-slate-300">
+            <pre id="log" class="whitespace-pre-wrap font-mono"></pre>
+            <span class="log-cursor"></span>
+          </div>
+
+          <!-- Terminal Footer -->
+          <div class="h-8 px-4 bg-slate-900/70 border-t border-slate-800/70 flex items-center justify-between text-[11px] text-slate-500">
+            <span>Node-Cron Engine &middot; Asia/Kolkata</span>
+            <span class="text-emerald-400 flex items-center gap-1">
+              <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> WebSocket Live
+            </span>
+          </div>
         </section>
+
       </div>
     </main>
   </div>
 
+  <!-- Schedule Settings Modal Dialog -->
+  <div id="schedule-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
+    <div class="w-full max-w-lg bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden transform transition-all">
+      
+      <!-- Modal Header -->
+      <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+        <div class="flex items-center gap-3">
+          <div class="w-9 h-9 rounded-xl bg-brand-50 text-brand-600 flex items-center justify-center font-bold">
+            <svg class="w-5 h-5"><use href="#icon-clock"/></svg>
+          </div>
+          <div>
+            <h3 class="text-base font-bold text-slate-900">Automated Run Schedules</h3>
+            <p class="text-xs text-slate-500">Built-in Railway cron scheduler (Asia/Kolkata)</p>
+          </div>
+        </div>
+        <button id="sched-close-btn" type="button" class="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 transition-colors">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+
+      <!-- Modal Body -->
+      <div class="p-6 space-y-5">
+        
+        <!-- Master Enable / Disable Toggle -->
+        <div class="flex items-center justify-between p-3.5 rounded-xl bg-slate-50 border border-slate-200/80">
+          <div>
+            <div class="text-sm font-semibold text-slate-900">Enable Automated Runs</div>
+            <div class="text-xs text-slate-500">When enabled, scrapers execute in background automatically at zero extra cost.</div>
+          </div>
+          <label class="relative inline-flex items-center cursor-pointer">
+            <input type="checkbox" id="sched-enabled" class="sr-only peer" checked>
+            <div class="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-brand-600"></div>
+          </label>
+        </div>
+
+        <!-- Wallet Job Card -->
+        <div class="p-4 rounded-xl border border-slate-200 hover:border-brand-200 transition-colors space-y-3">
+          <div class="flex items-start justify-between">
+            <div class="flex items-center gap-2.5">
+              <div class="w-7 h-7 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                <svg class="w-4 h-4"><use href="#icon-wallet"/></svg>
+              </div>
+              <div>
+                <h4 class="text-sm font-semibold text-slate-900">Wallet Scraper (Daily)</h4>
+                <p class="text-xs text-slate-500">Scrapes ads wallet balance & daily transactions</p>
+              </div>
+            </div>
+            <div class="flex items-center gap-2">
+              <label for="sched-wallet-time" class="text-xs font-medium text-slate-500">Run At (IST):</label>
+              <input type="time" id="sched-wallet-time" value="07:00" class="px-2.5 py-1 text-xs font-semibold bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 text-slate-800" />
+            </div>
+          </div>
+          <div class="flex items-center justify-between text-[11px] text-slate-400 pt-2 border-t border-slate-100">
+            <span>Frequency: Daily every morning</span>
+            <span>Last Run: <strong id="sched-wallet-last" class="text-slate-600 font-medium">None yet</strong></span>
+          </div>
+        </div>
+
+        <!-- Trends Job Card -->
+        <div class="p-4 rounded-xl border border-slate-200 hover:border-brand-200 transition-colors space-y-3">
+          <div class="flex items-start justify-between">
+            <div class="flex items-center gap-2.5">
+              <div class="w-7 h-7 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                <svg class="w-4 h-4"><use href="#icon-trending"/></svg>
+              </div>
+              <div>
+                <h4 class="text-sm font-semibold text-slate-900">Search Trends (Weekly)</h4>
+                <p class="text-xs text-slate-500">Scrapes weekly keyword search volume & rank trends</p>
+              </div>
+            </div>
+            <div class="flex items-center gap-2">
+              <label for="sched-trends-time" class="text-xs font-medium text-slate-500">Mondays (IST):</label>
+              <input type="time" id="sched-trends-time" value="08:00" class="px-2.5 py-1 text-xs font-semibold bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 text-slate-800" />
+            </div>
+          </div>
+          <div class="flex items-center justify-between text-[11px] text-slate-400 pt-2 border-t border-slate-100">
+            <span>Frequency: Weekly every Monday</span>
+            <span>Last Run: <strong id="sched-trends-last" class="text-slate-600 font-medium">None yet</strong></span>
+          </div>
+        </div>
+
+        <!-- Deduplication Callout -->
+        <div class="p-3 rounded-xl bg-amber-50/70 border border-amber-200/70 flex items-start gap-2.5 text-xs text-amber-800">
+          <span class="text-base leading-none">🛡️</span>
+          <div>
+            <strong class="font-semibold text-amber-900">Zero Duplication Guarantee:</strong>
+            If a scheduled or manual run runs multiple times on the same date, it automatically checks Google Sheets and skips existing dates/verticals to prevent duplicate entries.
+          </div>
+        </div>
+
+        <div id="sched-status-msg" class="text-xs text-center font-medium"></div>
+      </div>
+
+      <!-- Modal Footer -->
+      <div class="px-6 py-3.5 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-3">
+        <button id="sched-cancel-btn" type="button" class="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-800 rounded-lg hover:bg-slate-100 transition-colors">
+          Cancel
+        </button>
+        <button id="sched-save-btn" type="button" class="px-4 py-2 text-xs font-semibold text-white bg-brand-600 hover:bg-brand-700 active:scale-[0.98] rounded-lg shadow-sm transition-all">
+          Save Changes
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <script src="/schedule-modal.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>

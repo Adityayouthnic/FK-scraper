@@ -15,7 +15,7 @@ const {
 } = require('./runner');
 const { getOrCreateLiveSession, ensureAuthenticated } = require('./sessionManager');
 
-async function runScrapeJob(send) {
+async function runScrapeJob(send, options = {}) {
   const run = createRunContext('wallet');
 
   let client = null;
@@ -28,7 +28,7 @@ async function runScrapeJob(send) {
 
     client = await setupScreencast(run, context, page, send);
 
-    await ensureAuthenticated(page, context, send, run, sessionInfo);
+    await ensureAuthenticated(page, context, send, run, sessionInfo, options);
 
     if (!page.url().includes('dashboard/ads/wallet/summary')) {
       await awaitCancellable(run, navigateToWallet(page, send));

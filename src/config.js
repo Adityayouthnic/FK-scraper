@@ -55,6 +55,13 @@ const settings = {
   // os.tmpdir() is /tmp on Cloud Run but the user's temp folder on Windows —
   // a literal '/tmp' resolves to C:\tmp there, writing to the drive root.
   DOWNLOAD_DIR: process.env.DOWNLOAD_DIR || path.join(os.tmpdir(), 'fk-scraper-downloads'),
+
+  // Automated Scheduling settings
+  ENABLE_AUTO_SCHEDULE: process.env.ENABLE_AUTO_SCHEDULE !== 'false',
+  WALLET_CRON_SCHEDULE: process.env.WALLET_CRON_SCHEDULE || '0 7 * * *', // Daily 7:00 AM IST
+  TRENDS_CRON_SCHEDULE: process.env.TRENDS_CRON_SCHEDULE || '0 8 * * 1', // Mondays 8:00 AM IST
+  CRON_TIMEZONE: process.env.CRON_TIMEZONE || 'Asia/Kolkata',
+  ALERT_WEBHOOK_URL: process.env.ALERT_WEBHOOK_URL || '',
 };
 
 module.exports = { settings };

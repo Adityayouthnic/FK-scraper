@@ -8,8 +8,10 @@ const { runScrapeJob } = require('./src/scraper');
 const { runTrendsJob } = require('./src/trendsScraper');
 const { dispatchInput, cancelActiveRun } = require('./src/runner');
 const { closeLiveSession } = require('./src/sessionManager');
+const { initScheduler, getScheduleStatus, executeScheduledJob, updateScheduleConfig } = require('./src/scheduler');
 
 const app = express();
+app.use(express.json());
 
 app.get('/trends', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'trends.html'));
@@ -17,6 +19,48 @@ app.get('/trends', (req, res) => {
 
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// Scheduling status API
+app.get('/api/schedule', (req, res) => {
+  res.json(getScheduleStatus());
+});
+
+app.post('/api/schedule', (req, res) => {
+  try {
+    const updated = updateScheduleConfig(req.body || {});
+    res.json({ success: true, schedule: updated });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Middleware for token-protected trigger endpoints
+function verifyApiToken(req, res, next) {
+  const requiredToken = process.env.ACCESS_TOKEN;
+  if (!requiredToken) return next();
+  const authHeader = req.headers.authorization || '';
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : req.query.token;
+  if (token !== requiredToken) {
+    return res.status(401).json({ error: 'Unauthorized: invalid access token' });
+  }
+  next();
+}
+
+app.post('/api/run/wallet', verifyApiToken, async (req, res) => {
+  if (isRunning) {
+    return res.status(409).json({ error: 'A run is already in progress.' });
+  }
+  const result = await executeScheduledJob('wallet', req.body || {}, broadcast);
+  res.json(result);
+});
+
+app.post('/api/run/trends', verifyApiToken, async (req, res) => {
+  if (isRunning) {
+    return res.status(409).json({ error: 'A run is already in progress.' });
+  }
+  const result = await executeScheduledJob('trends', req.body || {}, broadcast);
+  res.json(result);
 });
 
 app.use(express.static(path.join(__dirname, 'public')));
@@ -134,6 +178,10 @@ wss.on('connection', (ws) => {
 const port = process.env.PORT || 8080;
 server.listen(port, () => {
   console.log(`FK-scraper listening on :${port}`);
+  initScheduler(broadcast, () => isRunning, (val, job) => {
+    isRunning = val;
+    activeJob = job;
+  });
 });
 
 process.on('SIGTERM', async () => {

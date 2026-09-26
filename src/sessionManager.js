@@ -122,7 +122,7 @@ async function getOrCreateLiveSession(send, run) {
  * - If there is no saved session, initiates the Flipkart seller login flow.
  * - If a saved session exists, tests whether it redirects to dashboard; if not, logs in fresh.
  */
-async function ensureAuthenticated(page, context, send, run, sessionInfo = {}) {
+async function ensureAuthenticated(page, context, send, run, sessionInfo = {}, options = {}) {
   const step = 'session.auth';
 
   // 1. If this exact live browser session already completed login in a prior run, reuse it!
@@ -144,7 +144,7 @@ async function ensureAuthenticated(page, context, send, run, sessionInfo = {}) {
   // We MUST perform login directly! We cannot assume an empty browser is logged in.
   if (!sessionInfo.hasSavedSession) {
     log(send, 'login', 'No saved session found. Initiating Flipkart seller login flow...');
-    await awaitCancellable(run, login(page, send));
+    await awaitCancellable(run, login(page, send, options));
     await awaitCancellable(run, page.waitForTimeout(3000));
     await awaitCancellable(run, saveSession(context, send));
     isLiveLoggedIn = true;
@@ -176,7 +176,7 @@ async function ensureAuthenticated(page, context, send, run, sessionInfo = {}) {
 
   // 4. Saved session check failed/expired: perform full login flow
   log(send, 'login', 'Initiating Flipkart seller login flow...');
-  await awaitCancellable(run, login(page, send));
+  await awaitCancellable(run, login(page, send, options));
   await awaitCancellable(run, page.waitForTimeout(3000));
   await awaitCancellable(run, saveSession(context, send));
   isLiveLoggedIn = true;

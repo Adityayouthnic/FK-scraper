@@ -79,17 +79,24 @@ async function fillLoginForm(page, email, password, send) {
   return false;
 }
 
-async function waitForLogin(page, send, captchaDetected) {
+async function waitForLogin(page, send, captchaDetected, unattended = false) {
   const step = 'login.wait';
+  const timeoutMs = unattended ? 45000 : LOGIN_TIMEOUT_MS;
+
   if (captchaDetected) {
+    if (unattended) {
+      throw new Error('[login.captcha] CAPTCHA detected during unattended automated run. Open the dashboard to log in once.');
+    }
     log(send, step, 'Waiting for manual CAPTCHA completion and Login click in the live view.');
   } else {
-    log(send, step, 'Waiting for login to complete in the live view if Flipkart requests any extra verification.');
+    log(send, step, unattended
+      ? 'Verifying automated login...'
+      : 'Waiting for login to complete in the live view if Flipkart requests any extra verification.');
   }
-  log(send, step, `Waiting up to ${LOGIN_TIMEOUT_MS / 60000} minutes for login to complete...`);
+  log(send, step, `Waiting up to ${Math.round(timeoutMs / 1000)}s for login to complete...`);
 
   const startUrl = page.url();
-  const deadline = Date.now() + LOGIN_TIMEOUT_MS;
+  const deadline = Date.now() + timeoutMs;
   const passwordField = page.locator(LoginSelectors.PASSWORD_INPUT_FALLBACK);
 
   while (Date.now() < deadline) {
@@ -113,14 +120,15 @@ async function waitForLogin(page, send, captchaDetected) {
     await sleep(POLL_INTERVAL_MS);
   }
 
-  throw new Error(`[${step}] Timed out after ${LOGIN_TIMEOUT_MS / 1000}s waiting for login to complete.`);
+  throw new Error(`[${step}] Timed out after ${Math.round(timeoutMs / 1000)}s waiting for login to complete.`);
 }
 
-async function login(page, send) {
+async function login(page, send, options = {}) {
   const { email, password } = loadCredentials();
-  log(send, 'login', 'Filling Flipkart seller login form...');
+  const unattended = options.unattended === true;
+  log(send, 'login', `Filling Flipkart seller login form${unattended ? ' (automated)' : ''}...`);
   const captchaDetected = await fillLoginForm(page, email, password, send);
-  await waitForLogin(page, send, captchaDetected);
+  await waitForLogin(page, send, captchaDetected, unattended);
 }
 
 module.exports = { login, LOGIN_URL };

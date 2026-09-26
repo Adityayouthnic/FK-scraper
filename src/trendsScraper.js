@@ -221,7 +221,7 @@ async function runTrendsJob(send, options = {}) {
     client = await setupScreencast(run, context, page, send);
 
     // Verify authentication: if already logged in, skips login immediately; if not, performs login
-    await ensureAuthenticated(page, context, send, run, sessionInfo);
+    await ensureAuthenticated(page, context, send, run, sessionInfo, options);
 
     // Determine target verticals & pages
     const pagesPerVertical = Math.max(1, parseInt(options.pages, 10) || settings.TRENDS_PAGES_PER_VERTICAL || 10);
