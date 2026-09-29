@@ -15,7 +15,9 @@
 
 const fs = require('fs');
 const path = require('path');
-const { chromium } = require('playwright');
+const { chromium } = require('playwright-extra');
+const stealthPlugin = require('puppeteer-extra-plugin-stealth');
+chromium.use(stealthPlugin());
 const { getRawZeptoCredentials } = require('./credentials');
 const { log, warn } = require('./utils');
 const {
@@ -155,7 +157,22 @@ function isRequestedToday(requestedAtCell) {
 }
 
 /**
- * Checks whether the current page is authenticated.
+ * Types text into a locator character-by-character with realistic human-like cadence.
+ */
+async function humanType(locator, text, page) {
+  await locator.click();
+  await page.waitForTimeout(100 + Math.random() * 100);
+  await locator.press(process.platform === 'darwin' ? 'Meta+A' : 'Control+A');
+  await locator.press('Backspace');
+  await page.waitForTimeout(60 + Math.random() * 60);
+  for (const ch of String(text || '')) {
+    await locator.pressSequentially(ch, { delay: 40 + Math.random() * 60 });
+  }
+  await page.waitForTimeout(120 + Math.random() * 150);
+}
+
+/**
+ * Checks whether the current page is authenticated and in the vendor workspace.
  */
 async function isLoggedIn(page) {
   try {
@@ -167,9 +184,26 @@ async function isLoggedIn(page) {
       return false;
     }
 
+    if (!pathname.startsWith('/vendor')) {
+      return false;
+    }
+
     const emailField = page.locator('input[placeholder="Email ID"]');
-    const isEmailVisible = await emailField.isVisible({ timeout: 1500 }).catch(() => false);
-    return !isEmailVisible;
+    if (await emailField.isVisible({ timeout: 400 }).catch(() => false)) {
+      return false;
+    }
+
+    const otpInput = await findOtpInput(page);
+    if (otpInput && await otpInput.first().isVisible({ timeout: 400 }).catch(() => false)) {
+      return false;
+    }
+
+    const bodyText = (await page.innerText('body').catch(() => '')).toLowerCase();
+    if (bodyText.includes('verify you are human') || bodyText.includes('access denied')) {
+      return false;
+    }
+
+    return true;
   } catch {
     return false;
   }
@@ -213,13 +247,19 @@ async function fillOtp(page, code, send = () => {}) {
   const count = await field.count();
   if (count >= code.length) {
     for (let i = 0; i < code.length; i++) {
-      await field.nth(i).fill(code[i]);
+      const box = field.nth(i);
+      await box.click();
+      await page.waitForTimeout(50 + Math.random() * 50);
+      await box.pressSequentially(code[i], { delay: 60 + Math.random() * 60 });
+      await page.waitForTimeout(50 + Math.random() * 50);
     }
   } else {
-    await field.first().fill(code);
+    await field.first().click();
+    await page.waitForTimeout(100);
+    await field.first().pressSequentially(code, { delay: 70 + Math.random() * 60 });
   }
 
-  await page.waitForTimeout(1000);
+  await page.waitForTimeout(600 + Math.random() * 400);
 
   const buttonNames = ['Confirm', 'Verify', 'Submit', 'Continue', 'Log In'];
   for (const name of buttonNames) {
@@ -227,7 +267,9 @@ async function fillOtp(page, code, send = () => {}) {
       const btn = page.getByRole('button', { name, exact: false });
       const btnCount = await btn.count();
       if (btnCount > 0 && await btn.first().isEnabled()) {
-        log(send, `[zepto.auth] Clicking '${name}' to submit OTP...`);
+        log(send, `[zepto.auth] Submitting OTP via '${name}' button...`);
+        await btn.first().hover().catch(() => {});
+        await page.waitForTimeout(200);
         await btn.first().click();
         return;
       }
@@ -249,7 +291,7 @@ async function autoLogin(page, creds, send = () => {}, run = null) {
     throw new Error('ZEPTO_EMAIL and ZEPTO_PASSWORD must be configured in Settings.');
   }
 
-  log(send, '[zepto.auth] Submitting credentials to Zepto portal...');
+  log(send, '[zepto.auth] Navigating to login portal with stealth profile...');
   if (run?.cancelled) throw new RunCancelledError();
   await page.goto(LOGIN_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(2500);
@@ -262,20 +304,31 @@ async function autoLogin(page, creds, send = () => {}, run = null) {
 
   const emailInput = page.locator('input[placeholder="Email ID"]');
   const passwordInput = page.locator('input[placeholder="Password"]');
-  await emailInput.fill(email);
-  await passwordInput.fill(password);
+
+  log(send, '[zepto.auth] Entering credentials with human cadence...');
+  await humanType(emailInput, email, page);
+  await humanType(passwordInput, password, page);
 
   const submittedAt = Date.now();
-  await page.getByRole('button', { name: 'Log In' }).click();
+  await page.waitForTimeout(300 + Math.random() * 200);
+
+  const loginBtn = page.getByRole('button', { name: 'Log In' });
+  await loginBtn.hover().catch(() => {});
+  await page.waitForTimeout(150);
+  await loginBtn.click();
 
   // Poll for dashboard, OTP challenge, or credentials error
   let otpFound = false;
-  for (let i = 0; i < 20; i++) {
+  for (let i = 0; i < 25; i++) {
     if (run?.cancelled) throw new RunCancelledError();
     await page.waitForTimeout(1500);
 
     if (await isLoggedIn(page)) {
       log(send, '[zepto.auth] Signed in — no OTP was required.');
+      try {
+        const sessionFile = path.join(getProfileDir(), 'storage_state.json');
+        await page.context().storageState({ path: sessionFile });
+      } catch {}
       return;
     }
 
@@ -289,11 +342,16 @@ async function autoLogin(page, creds, send = () => {}, run = null) {
     if (bodyText.includes('invalid credentials') || bodyText.includes('incorrect password')) {
       throw new Error('Zepto rejected sign-in: "Invalid Credentials provided". Verify ZEPTO_EMAIL and ZEPTO_PASSWORD in Settings.');
     }
+    if (bodyText.includes('verify you are human') || bodyText.includes('cloudflare')) {
+      log(send, '[zepto.auth] Bot challenge displayed on login. Operator can interact via Live Canvas.');
+    }
   }
 
   if (run?.cancelled) throw new RunCancelledError();
   if (!otpFound) {
-    throw new Error(`Neither dashboard nor OTP screen appeared (still on ${page.url()}).`);
+    const currentUrl = page.url();
+    const bodySample = (await page.innerText('body').catch(() => '')).slice(0, 200).replace(/\n+/g, ' ');
+    throw new Error(`Neither dashboard nor OTP screen appeared (URL: ${currentUrl}, screen: "${bodySample}").`);
   }
 
   log(send, '[zepto.auth] OTP challenge reached. Polling mailbox for verification code...');
@@ -313,16 +371,77 @@ async function autoLogin(page, creds, send = () => {}, run = null) {
   log(send, `[zepto.auth] Got ${code.length}-digit OTP from email. Entering into portal...`);
   await fillOtp(page, code, send);
 
-  for (let i = 0; i < 15; i++) {
+  for (let i = 0; i < 25; i++) {
     if (run?.cancelled) throw new RunCancelledError();
     await page.waitForTimeout(1500);
+
     if (await isLoggedIn(page)) {
       log(send, '[zepto.auth] OTP accepted — successfully authenticated to Zepto!');
+      try {
+        const sessionFile = path.join(getProfileDir(), 'storage_state.json');
+        await page.context().storageState({ path: sessionFile });
+        log(send, '[zepto.auth] Session state cached for subsequent runs.');
+      } catch {}
       return;
+    }
+
+    const bodyText = (await page.innerText('body').catch(() => '')).toLowerCase();
+    if (bodyText.includes('invalid otp') || bodyText.includes('incorrect otp')) {
+      throw new Error('Zepto portal rejected OTP: "Invalid OTP entered".');
+    }
+    if (bodyText.includes('too many attempts') || bodyText.includes('rate limit')) {
+      throw new Error('Zepto portal throttled login: "Too many attempts". Please wait a few minutes.');
     }
   }
 
-  throw new Error(`OTP submitted but sign-in was not confirmed (still on ${page.url()}).`);
+  const currentUrl = page.url();
+  const bodySample = (await page.innerText('body').catch(() => '')).slice(0, 250).replace(/\n+/g, ' ');
+  throw new Error(`OTP submitted but sign-in was not confirmed (URL: ${currentUrl}, screen: "${bodySample}").`);
+}
+
+/**
+ * Opens or focuses the reports page and waits for it to be interactive.
+ */
+async function openReports(page, send = () => {}, run = null) {
+  if (run?.cancelled) throw new RunCancelledError();
+  const currentUrl = page.url();
+
+  if (currentUrl.includes('/vendor/reports')) {
+    log(send, '[zepto.rep] Already on Reports view.');
+  } else {
+    log(send, `[zepto.rep] Opening Reports portal (${REPORTS_URL})...`);
+    await page.goto(REPORTS_URL, { waitUntil: 'domcontentloaded' });
+  }
+
+  // Wait for the reports page components to stabilize
+  for (let i = 0; i < 20; i++) {
+    if (run?.cancelled) throw new RunCancelledError();
+
+    if (page.url().includes('/login')) {
+      log(send, '[zepto.rep] Session expired or unauthenticated — redirected to login.');
+      return false;
+    }
+
+    const bodyText = (await page.innerText('body').catch(() => '')).toLowerCase();
+    if (bodyText.includes('verify you are human') || bodyText.includes('access denied') || bodyText.includes('cloudflare')) {
+      log(send, '[zepto.rep] WARNING: Bot challenge or access verification detected on screen.');
+      return false;
+    }
+
+    const reqBtn = page.getByRole('button', { name: 'Request Report' });
+    if (await reqBtn.count().then(c => c > 0).catch(() => false) && await reqBtn.first().isVisible().catch(() => false)) {
+      return true;
+    }
+
+    const tableRows = await getTableRows(page);
+    if (tableRows.length > 0) {
+      return true;
+    }
+
+    await page.waitForTimeout(400);
+  }
+
+  return true;
 }
 
 /**
@@ -331,21 +450,20 @@ async function autoLogin(page, creds, send = () => {}, run = null) {
 async function ensureSession(page, creds, send = () => {}, run = null) {
   log(send, '[zepto.auth] Checking portal session status...');
   if (run?.cancelled) throw new RunCancelledError();
-  await page.goto(REPORTS_URL, { waitUntil: 'domcontentloaded' });
-  await page.waitForTimeout(3000);
 
+  const isReady = await openReports(page, send, run);
   if (run?.cancelled) throw new RunCancelledError();
-  if (await isLoggedIn(page)) {
-    log(send, '[zepto.auth] Active session verified.');
+
+  if (isReady && await isLoggedIn(page)) {
+    log(send, '[zepto.auth] Active session verified and ready.');
     return;
   }
 
-  log(send, '[zepto.auth] Session expired or not logged in. Initiating automated sign-in...');
+  log(send, '[zepto.auth] Session not active. Initiating automated sign-in...');
   await autoLogin(page, creds, send, run);
 
   if (run?.cancelled) throw new RunCancelledError();
-  await page.goto(REPORTS_URL, { waitUntil: 'domcontentloaded' });
-  await page.waitForTimeout(3000);
+  await openReports(page, send, run);
 }
 
 /**
@@ -489,22 +607,48 @@ async function requestReport(page, reportType, startStr = null, endStr = null, s
   const span = startStr && endStr ? `: ${startStr} -> ${endStr}` : ' (snapshot — no date range)';
   log(send, `[zepto.rep] Requesting report '${reportType}'${span}...`);
 
-  if (run?.cancelled) throw new RunCancelledError();
-  await page.goto(REPORTS_URL, { waitUntil: 'domcontentloaded' });
-  for (let i = 0; i < 10; i++) {
-    if (run?.cancelled) throw new RunCancelledError();
-    await page.waitForTimeout(300);
-  }
+  await openReports(page, send, run);
 
   const rowsBefore = await getTableRows(page);
   const idsBefore = new Set(rowsBefore.map((r) => r.request_id));
 
   if (run?.cancelled) throw new RunCancelledError();
-  await page.getByRole('button', { name: 'Request Report' }).first().click();
-  for (let i = 0; i < 6; i++) {
+
+  // Multi-selector strategy for 'Request Report' button
+  const reqBtnSelectors = [
+    () => page.getByRole('button', { name: 'Request Report' }),
+    () => page.locator("button:has-text('Request Report')"),
+    () => page.locator("[role='button']:has-text('Request Report')"),
+    () => page.getByText('Request Report', { exact: true }),
+  ];
+
+  let reqBtn = null;
+  for (let i = 0; i < 20; i++) {
     if (run?.cancelled) throw new RunCancelledError();
-    await page.waitForTimeout(300);
+    for (const build of reqBtnSelectors) {
+      try {
+        const loc = build();
+        if (await loc.count() > 0 && await loc.first().isVisible()) {
+          reqBtn = loc.first();
+          break;
+        }
+      } catch {}
+    }
+    if (reqBtn) break;
+    await page.waitForTimeout(500);
   }
+
+  if (!reqBtn) {
+    const currentUrl = page.url();
+    const bodySample = (await page.innerText('body').catch(() => '')).slice(0, 300).replace(/\n+/g, ' ');
+    throw new Error(`Could not find 'Request Report' button on portal. (URL: ${currentUrl}, Page preview: "${bodySample}")`);
+  }
+
+  log(send, '[zepto.rep] Opening report request modal...');
+  await reqBtn.hover().catch(() => {});
+  await page.waitForTimeout(200);
+  await reqBtn.click();
+  await page.waitForTimeout(2000);
 
   if (run?.cancelled) throw new RunCancelledError();
   await pickReportType(page, reportType);
@@ -521,8 +665,12 @@ async function requestReport(page, reportType, startStr = null, endStr = null, s
   }
 
   if (run?.cancelled) throw new RunCancelledError();
-  await page.getByRole('button', { name: 'Submit', exact: true }).click();
+  const submitBtn = page.getByRole('button', { name: 'Submit', exact: true });
+  await submitBtn.hover().catch(() => {});
+  await page.waitForTimeout(200);
+  await submitBtn.click();
   log(send, '[zepto.rep] Report request submitted. Waiting for processing...');
+
   for (let i = 0; i < 10; i++) {
     if (run?.cancelled) throw new RunCancelledError();
     await page.waitForTimeout(300);
@@ -639,11 +787,7 @@ async function locateOrRequestReport(page, reportType, startStr = null, endStr =
 
   if (!force) {
     if (run?.cancelled) throw new RunCancelledError();
-    await page.goto(REPORTS_URL, { waitUntil: 'domcontentloaded' });
-    for (let i = 0; i < 10; i++) {
-      if (run?.cancelled) throw new RunCancelledError();
-      await page.waitForTimeout(300);
-    }
+    await openReports(page, send, run);
 
     const existing = await findExistingReport(page, reportType, startStr, endStr);
     if (existing) {
@@ -907,11 +1051,20 @@ async function runZeptoJob(send, options = {}) {
     viewport: { width: 1280, height: 720 },
     locale: 'en-IN',
     timezoneId: 'Asia/Kolkata',
+    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+    ignoreDefaultArgs: ['--enable-automation'],
     args: [
+      '--disable-blink-features=AutomationControlled',
       '--no-sandbox',
       '--disable-dev-shm-usage',
+      '--disable-infobars',
+      '--disable-background-timer-throttling',
+      '--disable-backgrounding-occluded-windows',
+      '--disable-renderer-backgrounding',
       '--no-first-run',
       '--no-default-browser-check',
+      '--window-size=1280,720',
+      '--start-maximized',
     ],
   };
 
@@ -934,6 +1087,59 @@ async function runZeptoJob(send, options = {}) {
     run.browser = context;
     context.setDefaultTimeout(45000);
     context.setDefaultNavigationTimeout(60000);
+
+    // Inject advanced in-page stealth evasions to prevent bot detection
+    await context.addInitScript(() => {
+      // 1. Hide navigator.webdriver
+      Object.defineProperty(navigator, 'webdriver', {
+        get: () => undefined,
+        configurable: true,
+      });
+
+      // 2. Mock Chrome runtime object
+      if (!window.chrome) {
+        window.chrome = {};
+      }
+      window.chrome.runtime = window.chrome.runtime || {
+        PlatformOs: { MAC: 'mac', WIN: 'win', ANDROID: 'android', CROS: 'cros', LINUX: 'linux', OPENBSD: 'openbsd' },
+        PlatformArch: { ARM: 'arm', X86_32: 'x86-32', X86_64: 'x86-64' },
+        connect: function() {},
+        sendMessage: function() {},
+      };
+      window.chrome.loadTimes = window.chrome.loadTimes || function() {};
+      window.chrome.csi = window.chrome.csi || function() {};
+      window.chrome.app = window.chrome.app || { isInstalled: false };
+
+      // 3. Mock languages to realistic Indian desktop browser
+      Object.defineProperty(navigator, 'languages', {
+        get: () => ['en-IN', 'en-GB', 'en-US', 'en', 'hi'],
+        configurable: true,
+      });
+
+      // 4. Mock hardware concurrency and memory
+      Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => 8, configurable: true });
+      Object.defineProperty(navigator, 'deviceMemory', { get: () => 8, configurable: true });
+
+      // 5. Mock WebGL Vendor & Renderer to mask SwiftShader/llvmpipe
+      const getParameterProto = WebGLRenderingContext.prototype.getParameter;
+      WebGLRenderingContext.prototype.getParameter = function(param) {
+        if (param === 0x9245) return 'Google Inc. (Intel)';
+        if (param === 0x9246) return 'ANGLE (Intel, Intel(R) UHD Graphics 630 Direct3D11 vs_5_0 ps_5_0, D3D11)';
+        return getParameterProto.apply(this, arguments);
+      };
+      if (typeof WebGL2RenderingContext !== 'undefined') {
+        const getParameterProto2 = WebGL2RenderingContext.prototype.getParameter;
+        WebGL2RenderingContext.prototype.getParameter = function(param) {
+          if (param === 0x9245) return 'Google Inc. (Intel)';
+          if (param === 0x9246) return 'ANGLE (Intel, Intel(R) UHD Graphics 630 Direct3D11 vs_5_0 ps_5_0, D3D11)';
+          return getParameterProto2.apply(this, arguments);
+        };
+      }
+
+      // 6. Fix screen dimensions
+      window.screen.availWidth = 1280;
+      window.screen.availHeight = 720;
+    });
 
     if (run.cancelled) throw new RunCancelledError();
 
@@ -1031,6 +1237,21 @@ async function runZeptoJob(send, options = {}) {
 
     const errorMsg = `Zepto ${action} failed: ${err.message}`;
     warn(wrappedSend, `[zepto] ${errorMsg}`);
+
+    // If page is still accessible, capture diagnostic screenshot
+    try {
+      if (page && !page.isClosed()) {
+        const currentUrl = page.url();
+        log(wrappedSend, `[zepto.diag] Failure URL: ${currentUrl}`);
+        const screenshotBuf = await page.screenshot({ fullPage: false }).catch(() => null);
+        if (screenshotBuf) {
+          wrappedSend('frame', {
+            data: screenshotBuf.toString('base64'),
+            source: 'failure_diagnostics',
+          });
+        }
+      }
+    } catch {}
 
     // Send failure alerts
     const tailLogs = logBuffer.slice(-30).join('\n');
