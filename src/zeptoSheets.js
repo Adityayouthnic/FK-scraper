@@ -37,12 +37,30 @@ function parseAnyDate(str) {
   if (!str) return null;
   const s = String(str).trim();
 
-  // dd-mm-yyyy e.g. 09-08-2026
+  // dd-mm-yyyy or mm/dd/yyyy e.g. 09/28/2026 or 28-09-2026
   const dmyMatch = s.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/);
   if (dmyMatch) {
-    const day = parseInt(dmyMatch[1], 10);
-    const month = parseInt(dmyMatch[2], 10) - 1;
+    const p1 = parseInt(dmyMatch[1], 10);
+    const p2 = parseInt(dmyMatch[2], 10);
     const year = parseInt(dmyMatch[3], 10);
+    let day, month;
+    if (p1 > 12) {
+      // p1 must be day (e.g. 28/09/2026)
+      day = p1;
+      month = p2 - 1;
+    } else if (p2 > 12) {
+      // p2 must be day (e.g. 09/28/2026)
+      month = p1 - 1;
+      day = p2;
+    } else if (s.includes('/')) {
+      // Slashes = portal format mm/dd/yyyy
+      month = p1 - 1;
+      day = p2;
+    } else {
+      // Dashes = Indian sheet format dd-mm-yyyy
+      day = p1;
+      month = p2 - 1;
+    }
     return new Date(year, month, day);
   }
 

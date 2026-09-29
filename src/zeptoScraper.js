@@ -123,14 +123,27 @@ function parseTableDates(text) {
 }
 
 /**
+ * Parses portal date string in MM/DD/YYYY format.
+ */
+function parsePortalDate(str) {
+  if (!str) return null;
+  const s = String(str).trim();
+  const m = s.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/);
+  if (m) {
+    return new Date(parseInt(m[3], 10), parseInt(m[1], 10) - 1, parseInt(m[2], 10));
+  }
+  return parseAnyDate(str);
+}
+
+/**
  * Compares table date range with requested from/to date strings.
  */
 function rangeMatches(rangeCell, startStr, endStr) {
   const found = parseTableDates(rangeCell);
   if (found.length !== 2) return false;
 
-  const sDate = parseAnyDate(startStr);
-  const eDate = parseAnyDate(endStr);
+  const sDate = parsePortalDate(startStr);
+  const eDate = parsePortalDate(endStr);
   if (!sDate || !eDate) return false;
 
   const sameDay = (d1, d2) =>
@@ -482,29 +495,77 @@ async function waitForTableReady(page, timeoutMs = 12000) {
 async function getTableRows(page) {
   try {
     return await page.evaluate(() => {
+      // Find header column mappings if available
+      const ths = Array.from(document.querySelectorAll('table thead th'));
+      const headerNames = ths.map((th) => (th.innerText || th.textContent || '').trim().toLowerCase());
+
+      const reqAtIdx = headerNames.findIndex((h) => h.includes('requested'));
+      const reqIdIdx = headerNames.findIndex((h) => h.includes('request id') || h.includes('id'));
+      const typeIdx = headerNames.findIndex((h) => h.includes('type'));
+      const rangeIdx = headerNames.findIndex((h) => h.includes('range') || h.includes('date'));
+      const statusIdx = headerNames.findIndex((h) => h.includes('status'));
+      const actionIdx = headerNames.findIndex((h) => h.includes('action'));
+
       const trs = Array.from(document.querySelectorAll('table tbody tr'));
       return trs
         .map((r, idx) => {
           const cells = Array.from(r.querySelectorAll('td, th'));
           if (cells.length < 3) return null;
 
-          const requested_at = (cells[0]?.innerText || cells[0]?.textContent || '').trim();
+          const cellTexts = cells.map((c) => (c.innerText || c.textContent || '').trim());
 
-          const idCell = cells[1];
+          // Primary: Read via header indices if found
+          let requested_at = reqAtIdx >= 0 && reqAtIdx < cellTexts.length ? cellTexts[reqAtIdx] : '';
           let request_id = '';
-          if (idCell) {
+          let type = typeIdx >= 0 && typeIdx < cellTexts.length ? cellTexts[typeIdx] : '';
+          let range = rangeIdx >= 0 && rangeIdx < cellTexts.length ? cellTexts[rangeIdx] : '';
+          let status = statusIdx >= 0 && statusIdx < cellTexts.length ? cellTexts[statusIdx] : '';
+          let actionText = actionIdx >= 0 && actionIdx < cellTexts.length ? cellTexts[actionIdx] : '';
+
+          // Request ID: check title attribute or text
+          if (reqIdIdx >= 0 && reqIdIdx < cells.length) {
+            const idCell = cells[reqIdIdx];
             const title = idCell.getAttribute('title') || idCell.querySelector('[title]')?.getAttribute('title');
             if (title && /[0-9a-fA-F-]{16,}/.test(title)) {
               request_id = title.trim();
             } else {
-              request_id = (idCell.innerText || idCell.textContent || '').trim();
+              request_id = cellTexts[reqIdIdx];
             }
           }
 
-          const type = (cells[2]?.innerText || cells[2]?.textContent || '').trim();
-          const range = (cells[3]?.innerText || cells[3]?.textContent || '').trim();
-          const status = (cells[4]?.innerText || cells[4]?.textContent || '').trim();
-          const actionText = (cells[5]?.innerText || cells[5]?.textContent || '').trim();
+          // Content-based heuristic fallback if headers didn't resolve all fields
+          for (let i = 0; i < cells.length; i++) {
+            const txt = cellTexts[i];
+            const cell = cells[i];
+
+            if (!status && (txt.includes('Completed') || txt.includes('Generating') || txt.includes('Failed') || txt.includes('In Progress'))) {
+              status = txt;
+            }
+            if (!type && (/^sales$/i.test(txt) || /^inventory$/i.test(txt) || /sales/i.test(txt))) {
+              type = txt;
+            }
+            if (!range && (/\d{1,2}\s+[A-Za-z]{3,}\s+\d{4}/.test(txt) && txt.includes('-'))) {
+              range = txt;
+            } else if (!range && txt === '-') {
+              range = '-';
+            }
+            if (!actionText && /download/i.test(txt)) {
+              actionText = txt;
+            }
+            if (!request_id) {
+              const title = cell.getAttribute('title') || cell.querySelector('[title]')?.getAttribute('title');
+              if (title && /[0-9a-fA-F-]{16,}/.test(title)) {
+                request_id = title.trim();
+              } else if (/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}/.test(txt) || /[0-9a-fA-F-]{16,}/.test(txt)) {
+                request_id = txt;
+              }
+            }
+            if (!requested_at && (/\d{1,2}\s+[A-Za-z]{3,}\s+\d{4}/.test(txt) && !txt.includes('-'))) {
+              requested_at = txt;
+            }
+          }
+
+          const hasDownloadBtn = Boolean(r.querySelector('button, a, [role="button"]') && /download/i.test(r.innerText));
 
           return {
             row_index: idx,
@@ -513,7 +574,7 @@ async function getTableRows(page) {
             type,
             range,
             status,
-            has_download: /download/i.test(actionText),
+            has_download: /download/i.test(actionText) || hasDownloadBtn,
           };
         })
         .filter(Boolean);
@@ -530,7 +591,7 @@ async function findExistingReport(page, reportType, startStr, endStr) {
   const rows = await getTableRows(page);
   for (const row of rows) {
     if (!typeMatches(row.type, reportType)) continue;
-    if (row.status.includes('Failed')) continue;
+    if (row.status.toLowerCase().includes('failed')) continue;
 
     if (startStr && endStr) {
       if (!rangeMatches(row.range, startStr, endStr)) continue;
@@ -858,16 +919,17 @@ async function waitForReportCompletion(
 /**
  * Obtains the report CSV data via presigned S3 URL or button download interception.
  */
-async function fetchReportData(page, requestId, send = () => {}, run = null, reportType = null) {
+async function fetchReportData(page, requestId, send = () => {}, run = null, reportType = null, startStr = null, endStr = null) {
   if (run?.cancelled) throw new RunCancelledError();
-  log(send, `[zepto.rep] Resolving download for report ${requestId || reportType || 'latest'}...`);
+  log(send, `[zepto.rep] Locating download for ${reportType || 'report'} (${requestId || 'existing row'})...`);
 
   await waitForTableReady(page, 6000);
 
-  // 1. Locate the row containing Download button
+  // 1. Locate the target row
   let rowLocator = null;
-  const cleanId = (requestId || '').replace(/\.+$/, '').trim();
+  const cleanId = (requestId || '').replace(/\.+$/, '').replace(/^row_\d+$/, '').trim();
 
+  // Try matching by requestId prefix if available
   if (cleanId && cleanId !== 'top_row') {
     const shortId = cleanId.slice(0, 16);
     const candidate = page.locator('table tbody tr').filter({ hasText: shortId }).first();
@@ -876,6 +938,39 @@ async function fetchReportData(page, requestId, send = () => {}, run = null, rep
     }
   }
 
+  // Try matching by reportType and date range snippet if applicable
+  if (!rowLocator && startStr) {
+    const sDate = parsePortalDate(startStr);
+    if (sDate) {
+      const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      const dayStr = String(sDate.getDate()).padStart(2, '0');
+      const dateSnippet = `${dayStr} ${monthNames[sDate.getMonth()]} ${sDate.getFullYear()}`;
+      const typeBadge = reportType && reportType.toLowerCase().includes('sale') ? 'SALES' : 'INVENTORY';
+
+      const candidate = page
+        .locator('table tbody tr')
+        .filter({ hasText: typeBadge })
+        .filter({ hasText: dateSnippet })
+        .filter({ hasText: 'Download' })
+        .first();
+
+      if (await candidate.count().then((c) => c > 0).catch(() => false)) {
+        log(send, `[zepto.rep] Located target row via date range snippet: ${dateSnippet}`);
+        rowLocator = candidate;
+      }
+    }
+  }
+
+  // Try matching by row index if requestId is row_N
+  if (!rowLocator && requestId && String(requestId).startsWith('row_')) {
+    const rowIdx = parseInt(String(requestId).replace('row_', ''), 10);
+    const candidate = page.locator('table tbody tr').nth(rowIdx);
+    if (await candidate.count().then((c) => c > 0).catch(() => false)) {
+      rowLocator = candidate;
+    }
+  }
+
+  // Fallback: match by reportType badge + Download
   if (!rowLocator && reportType) {
     const typeBadge = reportType.toLowerCase().includes('sale') ? 'SALES' : 'INVENTORY';
     const candidate = page
@@ -888,8 +983,13 @@ async function fetchReportData(page, requestId, send = () => {}, run = null, rep
     }
   }
 
+  // Last resort: topmost row with Download
   if (!rowLocator) {
     rowLocator = page.locator('table tbody tr').filter({ hasText: 'Download' }).first();
+  }
+
+  if (await rowLocator.count() === 0) {
+    throw new Error(`Could not locate report row with 'Download' button for ${reportType || 'report'}.`);
   }
 
   const downloadBtn = rowLocator.getByText('Download', { exact: false }).first();
@@ -898,10 +998,15 @@ async function fetchReportData(page, requestId, send = () => {}, run = null, rep
   // Set up listeners BEFORE clicking:
   const responsePromise = page
     .waitForResponse(
-      (res) =>
-        res.request().method() === 'GET' &&
-        res.url().includes('/reports/') &&
-        res.url().includes('/download'),
+      (res) => {
+        const url = res.url();
+        const isGet = res.request().method() === 'GET';
+        return isGet && (
+          (url.includes('/reports/') && url.includes('/download')) ||
+          url.includes('presignedS3Url') ||
+          url.includes('s3.amazonaws.com')
+        );
+      },
       { timeout: 45000 }
     )
     .catch(() => null);
@@ -991,13 +1096,14 @@ async function locateOrRequestReport(page, reportType, startStr = null, endStr =
 
     const existing = await findExistingReport(page, reportType, startStr, endStr);
     if (existing) {
-      if (existing.status.includes('Completed')) {
-        log(send, `[zepto.rep] Report already generated for ${span} (${existing.request_id || 'top row'}). Reusing it!`);
-        return existing.request_id || 'top_row';
+      if (existing.status.toLowerCase().includes('completed')) {
+        log(send, `[zepto.rep] Existing completed report found for ${span} (ID: ${existing.request_id || 'row ' + existing.row_index}). Directly downloading without regenerating!`);
+        return existing.request_id || `row_${existing.row_index}`;
       }
-      log(send, `[zepto.rep] A request for ${span} is already running (${existing.request_id || 'top row'}). Waiting on it...`);
+      log(send, `[zepto.rep] A request for ${span} is already in table (${existing.request_id || 'row ' + existing.row_index}, status: ${existing.status}). Waiting on it...`);
       return await waitForReportCompletion(page, new Set(), existing.request_id, send, 300, run, reportType, startStr, endStr);
     }
+    log(send, `[zepto.rep] No existing report found for ${span}. Submitting a new request via portal...`);
   }
 
   if (run?.cancelled) throw new RunCancelledError();
@@ -1064,7 +1170,7 @@ async function runSalesSync(page, creds, options, send = () => {}, run = null) {
   if (run?.cancelled) throw new RunCancelledError();
   const requestId = await locateOrRequestReport(page, 'Sales_F', startPortal, endPortal, options.force, send, run);
   if (run?.cancelled) throw new RunCancelledError();
-  const { filename, csvText } = await fetchReportData(page, requestId, send, run, 'Sales_F');
+  const { filename, csvText } = await fetchReportData(page, requestId, send, run, 'Sales_F', startPortal, endPortal);
 
   log(send, `[zepto.sales] Transforming Sales CSV (${csvText.length.toLocaleString('en-IN')} bytes)...`);
   const transformedRows = transformSalesCsv(csvText, lookups, send);
@@ -1101,7 +1207,7 @@ async function runInventoryRefresh(page, creds, options, send = () => {}, run = 
 
   const requestId = await locateOrRequestReport(page, 'Vendor Inventory_F', null, null, options.force, send, run);
   if (run?.cancelled) throw new RunCancelledError();
-  const { filename, csvText } = await fetchReportData(page, requestId, send, run, 'Vendor Inventory_F');
+  const { filename, csvText } = await fetchReportData(page, requestId, send, run, 'Vendor Inventory_F', null, null);
 
   if (options.dryRun) {
     log(send, `[zepto.inv] DRY RUN: Downloaded ${filename} (${csvText.length.toLocaleString('en-IN')} bytes). Skipping tab replace.`);
@@ -1145,7 +1251,7 @@ async function runDownloadReport(page, creds, options, send = () => {}, run = nu
   if (run?.cancelled) throw new RunCancelledError();
   const requestId = await locateOrRequestReport(page, reportType, startPortal, endPortal, options.force, send, run);
   if (run?.cancelled) throw new RunCancelledError();
-  const { filename, csvText } = await fetchReportData(page, requestId, send, run, reportType);
+  const { filename, csvText } = await fetchReportData(page, requestId, send, run, reportType, startPortal, endPortal);
 
   const downloadsDir = path.join(__dirname, '..', 'downloads');
   if (!fs.existsSync(downloadsDir)) {
@@ -1248,7 +1354,7 @@ async function runZeptoJob(send, options = {}) {
   const launchOptions = {
     headless: !isHeaded,
     acceptDownloads: true,
-    viewport: { width: 1280, height: 720 },
+    viewport: { width: 1600, height: 900 },
     locale: 'en-IN',
     timezoneId: 'Asia/Kolkata',
     userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
@@ -1263,7 +1369,7 @@ async function runZeptoJob(send, options = {}) {
       '--disable-renderer-backgrounding',
       '--no-first-run',
       '--no-default-browser-check',
-      '--window-size=1280,720',
+      '--window-size=1600,900',
       '--start-maximized',
     ],
   };
