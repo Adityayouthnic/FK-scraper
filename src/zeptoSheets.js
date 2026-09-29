@@ -12,7 +12,7 @@
 const fs = require('fs');
 const path = require('path');
 const { parse } = require('csv-parse/sync');
-const { getSheetsClient } = require('./googleAuth');
+const { getSheetsClient, getAuthIdentity } = require('./googleAuth');
 const { log, warn } = require('./utils');
 
 const SALES_TAB = 'SALES DATA-Zepto';
@@ -324,6 +324,24 @@ async function copyRowFormat(sheets, sheetId, tabId, srcRow, firstRow, lastRow, 
   });
 }
 
+function formatPermissionError(err, sheetId, tabName) {
+  const isPerm =
+    err &&
+    (err.status === 403 ||
+      err.code === 403 ||
+      (err.message && err.message.toLowerCase().includes('caller does not have permission')));
+  if (!isPerm) return err;
+  const ident = getAuthIdentity();
+  const accountDesc =
+    ident.type === 'service_account'
+      ? `Google Service Account (${ident.identity})`
+      : `Google Account (${ident.identity})`;
+  return new Error(
+    `Google Sheets 403 Permission Denied: ${accountDesc} does not have Editor permission on sheet '${tabName}' (Spreadsheet ID: ${sheetId}). ` +
+      `Fix: Open https://docs.google.com/spreadsheets/d/${sheetId}, click 'Share' in the top right, and add '${ident.identity}' as 'Editor'.`
+  );
+}
+
 /**
  * Appends new sales rows into SALES DATA-Zepto, re-verifying against duplicates.
  */
@@ -360,37 +378,39 @@ async function appendSalesData(sheets, sheetId, transformedRows, send = () => {}
 
   log(send, `[zepto.sheet] Writing ${pending.length} rows into '${SALES_TAB}' (rows ${startRow}..${endRow})...`);
 
-  // Ensure sheet has enough row capacity
-  const maxRows = sheetMeta.properties.gridProperties.rowCount || 1000;
-  if (endRow > maxRows) {
-    const addCount = endRow - maxRows + 200;
-    log(send, `[zepto.sheet] Expanding sheet capacity by ${addCount} rows...`);
-    await sheets.spreadsheets.batchUpdate({
-      spreadsheetId: sheetId,
-      requestBody: {
-        requests: [
-          {
-            appendDimension: {
-              sheetId: tabId,
-              dimension: 'ROWS',
-              length: addCount,
-            },
-          },
-        ],
-      },
-    });
-  }
-
   // 4. Build values with formulas
   const values = buildSheetValues(pending, startRow);
 
   // 5. Write values
-  await sheets.spreadsheets.values.update({
-    spreadsheetId: sheetId,
-    range: `'${SALES_TAB}'!A${startRow}:O${endRow}`,
-    valueInputOption: 'USER_ENTERED',
-    requestBody: { values },
-  });
+  try {
+    if (endRow > maxRows) {
+      const addCount = endRow - maxRows + 200;
+      log(send, `[zepto.sheet] Expanding sheet capacity by ${addCount} rows...`);
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId: sheetId,
+        requestBody: {
+          requests: [
+            {
+              appendDimension: {
+                sheetId: tabId,
+                dimension: 'ROWS',
+                length: addCount,
+              },
+            },
+          ],
+        },
+      });
+    }
+
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: sheetId,
+      range: `'${SALES_TAB}'!A${startRow}:O${endRow}`,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: { values },
+    });
+  } catch (err) {
+    throw formatPermissionError(err, sheetId, SALES_TAB);
+  }
 
   // 6. Copy row format down from row above
   if (startRow >= 4) {
@@ -480,22 +500,25 @@ async function refreshInventoryData(sheets, sheetId, csvText, onDate = new Date(
     });
   }
 
-  // Clear stale range
-  const clearRange = `'${INVENTORY_TAB}'!A${FIRST_DATA_ROW}:F${Math.max(oldLastRow, newLastRow)}`;
-  await sheets.spreadsheets.values.clear({
-    spreadsheetId: sheetId,
-    range: clearRange,
-  });
+  // Clear stale range and write new rows
+  try {
+    const clearRange = `'${INVENTORY_TAB}'!A${FIRST_DATA_ROW}:F${Math.max(oldLastRow, newLastRow)}`;
+    await sheets.spreadsheets.values.clear({
+      spreadsheetId: sheetId,
+      range: clearRange,
+    });
 
-  // Write new rows
-  const writeRange = `'${INVENTORY_TAB}'!A${FIRST_DATA_ROW}:F${newLastRow}`;
-  log(send, `[zepto.inv] Writing ${rows.length} rows into ${writeRange}...`);
-  await sheets.spreadsheets.values.update({
-    spreadsheetId: sheetId,
-    range: writeRange,
-    valueInputOption: 'USER_ENTERED',
-    requestBody: { values: rows },
-  });
+    const writeRange = `'${INVENTORY_TAB}'!A${FIRST_DATA_ROW}:F${newLastRow}`;
+    log(send, `[zepto.inv] Writing ${rows.length} rows into ${writeRange}...`);
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: sheetId,
+      range: writeRange,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: { values: rows },
+    });
+  } catch (err) {
+    throw formatPermissionError(err, sheetId, INVENTORY_TAB);
+  }
 
   log(send, `[zepto.inv] Successfully refreshed '${INVENTORY_TAB}'. Total units: ${totalUnits}`);
   return { rowsWritten: rows.length, totalUnits, date: dateStr };

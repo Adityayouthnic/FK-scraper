@@ -41,7 +41,7 @@ const {
   formatSheetDate,
   parseAnyDate,
 } = require('./zeptoSheets');
-const { getSheetsClient } = require('./googleAuth');
+const { getSheetsClient, getAuthIdentity } = require('./googleAuth');
 const { sendZeptoAlert } = require('./zeptoNotify');
 const { sendAlert } = require('./alerts');
 
@@ -1135,6 +1135,8 @@ async function runSalesSync(page, creds, options, send = () => {}, run = null) {
   }
 
   const sheets = await getSheetsClient();
+  const authIdent = getAuthIdentity();
+  log(send, `[zepto.sheet] Connected via ${authIdent.type === 'oauth' ? 'OAuth User' : 'Service Account'} (${authIdent.identity}).`);
   const lookups = await loadLookups(sheets, sheetId, send);
 
   let startPortal = '';
