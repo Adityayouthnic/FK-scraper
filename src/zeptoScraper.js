@@ -59,6 +59,9 @@ const TABLE_DATE_RE = /\d{1,2}\s+[A-Za-z]{3,}\s+\d{4}/g;
  * Returns path to local persistent browser profile.
  */
 function getProfileDir() {
+  if (process.env.ZEPTO_PROFILE_DIR && fs.existsSync(process.env.ZEPTO_PROFILE_DIR)) {
+    return process.env.ZEPTO_PROFILE_DIR;
+  }
   const localDir = path.join(__dirname, '..', 'secrets', 'zepto_profile');
   if (!fs.existsSync(localDir)) {
     try {
@@ -66,6 +69,116 @@ function getProfileDir() {
     } catch {}
   }
   return localDir;
+}
+
+/**
+ * In-memory cache of storageState (cookies & localStorage) across runs within node process.
+ */
+let inMemoryZeptoSession = null;
+
+/**
+ * Returns candidate paths where Zepto storage state (cookies & localStorage) may be found or saved.
+ */
+function getSessionStatePaths() {
+  const profileDir = getProfileDir();
+  return [
+    process.env.ZEPTO_STORAGE_STATE_PATH,
+    path.join(__dirname, '..', 'secrets', 'storage_state.json'),
+    path.join(profileDir, 'storage_state.json'),
+    path.join('C:', 'Tools 2.0', 'Zepto_Auto_sale', 'secrets', 'storage_state.json'),
+  ].filter(Boolean);
+}
+
+/**
+ * Loads saved Zepto session state from memory or disk if available.
+ */
+function loadSavedSessionState(send = () => {}) {
+  // 1. Check in-memory session cache first
+  if (inMemoryZeptoSession && (inMemoryZeptoSession.cookies?.length || inMemoryZeptoSession.origins?.length)) {
+    log(send, `[zepto.auth] Reusing active session state from memory (${inMemoryZeptoSession.cookies?.length || 0} cookies, ${inMemoryZeptoSession.origins?.length || 0} origin entries).`);
+    return inMemoryZeptoSession;
+  }
+
+  // 2. Check ZEPTO_STORAGE_STATE environment variable if configured
+  if (process.env.ZEPTO_STORAGE_STATE) {
+    try {
+      const parsed = JSON.parse(process.env.ZEPTO_STORAGE_STATE);
+      if (parsed && (parsed.cookies?.length || parsed.origins?.length)) {
+        inMemoryZeptoSession = parsed;
+        log(send, `[zepto.auth] Loaded session state from ZEPTO_STORAGE_STATE env (${parsed.cookies?.length || 0} cookies, ${parsed.origins?.length || 0} origin entries).`);
+        return inMemoryZeptoSession;
+      }
+    } catch {}
+  }
+
+  // 3. Check candidate files on disk
+  const paths = getSessionStatePaths();
+  for (const p of paths) {
+    if (fs.existsSync(p)) {
+      try {
+        const raw = fs.readFileSync(p, 'utf8');
+        const parsed = JSON.parse(raw);
+        if (parsed && (parsed.cookies?.length || parsed.origins?.length)) {
+          inMemoryZeptoSession = parsed;
+          log(send, `[zepto.auth] Loaded saved session state from ${path.basename(p)} (${parsed.cookies?.length || 0} cookies, ${parsed.origins?.length || 0} origin entries).`);
+          return inMemoryZeptoSession;
+        }
+      } catch (err) {
+        log(send, `[zepto.auth] Note reading session state: ${err.message}`);
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Saves current authenticated cookies and localStorage to memory and disk.
+ */
+async function saveZeptoSession(context, page = null, send = () => {}) {
+  try {
+    if (!context) return;
+    const state = await context.storageState().catch(() => null);
+    if (!state || (!state.cookies?.length && !state.origins?.length)) return;
+
+    inMemoryZeptoSession = state;
+
+    const targets = [
+      path.join(__dirname, '..', 'secrets', 'storage_state.json'),
+      path.join(getProfileDir(), 'storage_state.json'),
+    ];
+
+    for (const t of targets) {
+      try {
+        fs.mkdirSync(path.dirname(t), { recursive: true });
+        fs.writeFileSync(t, JSON.stringify(state, null, 2), 'utf8');
+      } catch {}
+    }
+
+    log(send, `[zepto.auth] Session state preserved for subsequent runs (${state.cookies?.length || 0} cookies, ${state.origins?.length || 0} origin entries).`);
+  } catch (err) {
+    // Non-fatal
+  }
+}
+
+/**
+ * Returns current session health metadata.
+ */
+function getZeptoSessionStatus() {
+  const savedState = loadSavedSessionState();
+  if (savedState) {
+    return {
+      authenticated: true,
+      cookiesCount: savedState.cookies?.length || 0,
+      originsCount: savedState.origins?.length || 0,
+      source: inMemoryZeptoSession ? 'memory' : 'file',
+    };
+  }
+  return {
+    authenticated: false,
+    cookiesCount: 0,
+    originsCount: 0,
+  };
 }
 
 /**
@@ -355,10 +468,7 @@ async function autoLogin(page, creds, send = () => {}, run = null) {
 
     if (await isLoggedIn(page)) {
       log(send, '[zepto.auth] Signed in — no OTP was required.');
-      try {
-        const sessionFile = path.join(getProfileDir(), 'storage_state.json');
-        await page.context().storageState({ path: sessionFile });
-      } catch {}
+      await saveZeptoSession(page.context(), page, send);
       return;
     }
 
@@ -407,11 +517,7 @@ async function autoLogin(page, creds, send = () => {}, run = null) {
 
     if (await isLoggedIn(page)) {
       log(send, '[zepto.auth] OTP accepted — successfully authenticated to Zepto!');
-      try {
-        const sessionFile = path.join(getProfileDir(), 'storage_state.json');
-        await page.context().storageState({ path: sessionFile });
-        log(send, '[zepto.auth] Session state cached for subsequent runs.');
-      } catch {}
+      await saveZeptoSession(page.context(), page, send);
       return;
     }
 
@@ -477,23 +583,49 @@ async function openReports(page, send = () => {}, run = null) {
 
 /**
  * Ensures browser has an active authenticated session.
+ * Reuses existing session cookies & storage state whenever valid.
+ * Does not navigate or trigger login unless strictly necessary.
  */
 async function ensureSession(page, creds, send = () => {}, run = null) {
   log(send, '[zepto.auth] Checking portal session status...');
   if (run?.cancelled) throw new RunCancelledError();
 
+  // 1. If page is already on /vendor and authenticated, reuse immediately without reloading!
+  if (await isLoggedIn(page)) {
+    log(send, '[zepto.auth] Active session verified and ready (reusing existing session).');
+    await saveZeptoSession(page.context(), page, send);
+    return;
+  }
+
+  // 2. Open Reports portal to verify session
   const isReady = await openReports(page, send, run);
   if (run?.cancelled) throw new RunCancelledError();
 
   if (isReady && await isLoggedIn(page)) {
     log(send, '[zepto.auth] Active session verified and ready.');
+    await saveZeptoSession(page.context(), page, send);
     return;
   }
 
+  // 3. Before triggering credentials login, check if LOGIN_URL bounces automatically to dashboard
+  log(send, '[zepto.auth] Verifying portal session cookie...');
+  await page.goto(LOGIN_URL, { waitUntil: 'domcontentloaded' }).catch(() => {});
+  await page.waitForTimeout(2000);
+
+  if (run?.cancelled) throw new RunCancelledError();
+  if (await isLoggedIn(page)) {
+    log(send, '[zepto.auth] Portal recognized existing session. Reusing authenticated session.');
+    await saveZeptoSession(page.context(), page, send);
+    await openReports(page, send, run);
+    return;
+  }
+
+  // 4. Only if all checks confirm no active session exists, initiate automated sign-in
   log(send, '[zepto.auth] Session not active. Initiating automated sign-in...');
   await autoLogin(page, creds, send, run);
 
   if (run?.cancelled) throw new RunCancelledError();
+  await saveZeptoSession(page.context(), page, send);
   await openReports(page, send, run);
 }
 
@@ -1308,6 +1440,7 @@ async function runLoginCheck(page, creds, options, send = () => {}, run = null) 
   if (run?.cancelled) throw new RunCancelledError();
   if (await isLoggedIn(page)) {
     log(send, '[zepto.login] Existing session is valid and authenticated!');
+    await saveZeptoSession(page.context(), page, send);
     return { success: true, message: 'Session is active and valid.' };
   }
 
@@ -1328,6 +1461,7 @@ async function runLoginCheck(page, creds, options, send = () => {}, run = null) 
       if (run?.cancelled) throw new RunCancelledError();
       if (await isLoggedIn(page)) {
         log(send, '[zepto.login] Sign-in detected! Session successfully saved.');
+        await saveZeptoSession(page.context(), page, send);
         return { success: true, message: 'Setup completed successfully.' };
       }
     }
@@ -1336,6 +1470,7 @@ async function runLoginCheck(page, creds, options, send = () => {}, run = null) 
   } else {
     log(send, '[zepto.login] Session not found. Executing auto-login...');
     await autoLogin(page, creds, send, run);
+    await saveZeptoSession(page.context(), page, send);
     return { success: true, message: 'Automated login completed successfully.' };
   }
 }
@@ -1369,6 +1504,7 @@ async function runZeptoJob(send, options = {}) {
 
   const run = createRunContext('zepto');
   const profileDir = getProfileDir();
+  const savedState = loadSavedSessionState(wrappedSend);
 
   const launchOptions = {
     headless: !isHeaded,
@@ -1391,6 +1527,7 @@ async function runZeptoJob(send, options = {}) {
       '--window-size=1600,900',
       '--start-maximized',
     ],
+    ...(savedState ? { storageState: savedState } : {}),
   };
 
   let context = null;
@@ -1597,6 +1734,11 @@ async function runZeptoJob(send, options = {}) {
     }
     clearActivePage(page);
     if (context) {
+      try {
+        if (page && !page.isClosed() && await isLoggedIn(page)) {
+          await saveZeptoSession(context, page, () => {});
+        }
+      } catch {}
       await context.close().catch(() => {});
     }
     run.resolveCancel();
@@ -1611,4 +1753,7 @@ module.exports = {
   runDownloadReport,
   runLoginCheck,
   formatPortalDate,
+  saveZeptoSession,
+  loadSavedSessionState,
+  getZeptoSessionStatus,
 };

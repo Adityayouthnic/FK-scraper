@@ -9,7 +9,7 @@ const { WebSocketServer } = require('ws');
 
 const { runScrapeJob } = require('./src/scraper');
 const { runTrendsJob } = require('./src/trendsScraper');
-const { runZeptoJob } = require('./src/zeptoScraper');
+const { runZeptoJob, getZeptoSessionStatus } = require('./src/zeptoScraper');
 const { dispatchInput, cancelActiveRun, getActiveRun } = require('./src/runner');
 const { closeLiveSession } = require('./src/sessionManager');
 const { initScheduler, getScheduleStatus, executeScheduledJob, updateScheduleConfig } = require('./src/scheduler');
@@ -159,6 +159,10 @@ app.get('/api/zepto/lookups/unmapped', requireAuth, (req, res) => {
 
 app.get('/api/health/lookups', requireAuth, (req, res) => {
   res.json(getUnmappedReport());
+});
+
+app.get('/api/zepto/session/status', requireAuth, (req, res) => {
+  res.json(getZeptoSessionStatus());
 });
 
 app.post('/api/settings/test-connections', requireAuth, requireAdmin, async (req, res) => {
