@@ -160,7 +160,41 @@ async function fetchZeptoOtp(creds, sinceTs = Date.now(), logFn = () => {}, time
   throw new Error(`No OTP email from ${OTP_SENDER} arrived within ${Math.round(timeoutMs / 1000)}s.`);
 }
 
+/**
+ * Verifies IMAP connection and credentials without searching for messages.
+ */
+async function testImapConnection({ host, user, password }) {
+  if (!user || !password) {
+    return { success: false, error: 'IMAP user and password are required.' };
+  }
+  const client = new ImapFlow({
+    host: host || 'imap.gmail.com',
+    port: 993,
+    secure: true,
+    auth: {
+      user,
+      pass: password.replace(/\s+/g, ''),
+    },
+    logger: false,
+    emitLogs: false,
+  });
+
+  try {
+    await client.connect();
+    const lock = await client.getMailboxLock('INBOX');
+    lock.release();
+    await client.logout().catch(() => {});
+    return { success: true, message: `Connected successfully to IMAP mailbox '${user}'.` };
+  } catch (err) {
+    return {
+      success: false,
+      error: `IMAP connection failed: ${err.message}. Ensure IMAP_PASSWORD is a 16-character Google App Password.`,
+    };
+  }
+}
+
 module.exports = {
   fetchZeptoOtp,
   extractOtpCode,
+  testImapConnection,
 };

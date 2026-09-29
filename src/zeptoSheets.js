@@ -13,6 +13,7 @@ const fs = require('fs');
 const path = require('path');
 const { parse } = require('csv-parse/sync');
 const { getSheetsClient, getAuthIdentity } = require('./googleAuth');
+const { recordUnmapped, reconcileWithLookups } = require('./unmappedStore');
 const { log, warn } = require('./utils');
 
 const SALES_TAB = 'SALES DATA-Zepto';
@@ -159,6 +160,7 @@ async function loadLookups(sheets, sheetId, send = () => {}) {
   }
 
   log(send, `[zepto.lookups] Loaded ${eanMap.size} EANs, ${zoneMap.size} zones, and ${catalogMap.size} master SKUs.`);
+  reconcileWithLookups({ eanMap, zoneMap, catalogMap });
   return { eanMap, zoneMap, catalogMap };
 }
 
@@ -228,6 +230,38 @@ function transformSalesCsv(csvText, lookups, send = () => {}) {
 
   const { eanMap, zoneMap, catalogMap } = lookups;
   const transformed = [];
+
+  // Track unmapped items with zero data loss policy
+  const unknownEans = new Set();
+  const unknownCities = new Set();
+  for (const r of records) {
+    const eanStr = String(r['EAN'] || r['ean'] || '').trim();
+    if (eanStr && (!eanMap || !eanMap.has(eanStr))) {
+      unknownEans.add(eanStr);
+    }
+    const city = String(r['City'] || r['city'] || '').trim();
+    if (city && (!zoneMap || !zoneMap.has(city.toLowerCase()))) {
+      unknownCities.add(city);
+    }
+  }
+
+  if (unknownEans.size > 0) {
+    const eanList = [...unknownEans].sort();
+    warn(
+      send,
+      `[zepto.lookups] WARNING: ${eanList.length} EAN(s) missing from 'EAN OMS Mapping': ${eanList.slice(0, 10).join(', ')} — their Seller SKU Code and Size will be blank.`
+    );
+    recordUnmapped({ eans: eanList });
+  }
+
+  if (unknownCities.size > 0) {
+    const cityList = [...unknownCities].sort();
+    warn(
+      send,
+      `[zepto.lookups] WARNING: ${cityList.length} city/cities missing from 'Zone Mapping': ${cityList.join(', ')} — their Zone will be blank.`
+    );
+    recordUnmapped({ cities: cityList });
+  }
 
   for (const r of records) {
     const rawDate = r['Date'] || r['date'];

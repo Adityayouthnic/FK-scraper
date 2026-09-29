@@ -83,6 +83,22 @@ function appendLog(message, kind) {
   line.append(` ${message}`);
   log.appendChild(line);
   if (logContainer) logContainer.scrollTop = logContainer.scrollHeight;
+
+  // Stage Stepper detection
+  const lowerMsg = message.toLowerCase();
+  if (lowerMsg.includes('zepto.auth') || lowerMsg.includes('otp')) {
+    setStepperStep('auth');
+  } else if (lowerMsg.includes('zepto.sheet') && (lowerMsg.includes('missing') || lowerMsg.includes('found') || lowerMsg.includes('checking'))) {
+    setStepperStep('sales_check');
+  } else if (lowerMsg.includes('zepto.rep') || lowerMsg.includes('requesting report') || lowerMsg.includes('acquired report')) {
+    setStepperStep('download');
+  } else if (lowerMsg.includes('zepto.sales') || lowerMsg.includes('transforming sales') || lowerMsg.includes('writing')) {
+    setStepperStep('append');
+  } else if (lowerMsg.includes('5s cooldown') || lowerMsg.includes('stage 1 complete')) {
+    setStepperStep('cooldown');
+  } else if (lowerMsg.includes('zepto.inv') || lowerMsg.includes('stage 2')) {
+    setStepperStep('inventory');
+  }
 }
 
 function classifyLog(message) {
@@ -91,6 +107,59 @@ function classifyLog(message) {
   if (lower.startsWith('warning') || lower.includes('warning:')) return 'warn';
   if (lower.includes('completed') || lower.includes('done') || lower.includes('success') || lower.includes('ok — finished')) return 'done';
   return 'info';
+}
+
+// Stepper helpers
+const stepItems = document.querySelectorAll('.step-item');
+function setStepperStep(stepKey) {
+  const stepOrder = ['auth', 'sales_check', 'download', 'append', 'cooldown', 'inventory'];
+  const targetIdx = stepOrder.indexOf(stepKey);
+  if (targetIdx === -1) return;
+
+  stepItems.forEach((item, idx) => {
+    const numEl = item.querySelector('.step-num');
+    if (idx < targetIdx) {
+      item.className = 'step-item flex items-center gap-2 text-emerald-600 font-semibold transition-colors';
+      if (numEl) {
+        numEl.className = 'step-num w-5 h-5 rounded-full bg-emerald-100 border border-emerald-300 text-[10px] flex items-center justify-center font-bold text-emerald-700';
+        numEl.textContent = '✓';
+      }
+    } else if (idx === targetIdx) {
+      item.className = 'step-item flex items-center gap-2 text-fuchsia-700 font-bold transition-colors animate-pulse';
+      if (numEl) {
+        numEl.className = 'step-num w-5 h-5 rounded-full bg-fuchsia-600 border border-fuchsia-700 text-[10px] flex items-center justify-center font-bold text-white shadow-sm';
+        numEl.textContent = String(idx + 1);
+      }
+    } else {
+      item.className = 'step-item flex items-center gap-2 text-slate-400 font-medium transition-colors';
+      if (numEl) {
+        numEl.className = 'step-num w-5 h-5 rounded-full bg-slate-100 border border-slate-200 text-[10px] flex items-center justify-center font-bold text-slate-500';
+        numEl.textContent = String(idx + 1);
+      }
+    }
+  });
+}
+
+function resetStepper() {
+  stepItems.forEach((item, idx) => {
+    const numEl = item.querySelector('.step-num');
+    item.className = 'step-item flex items-center gap-2 text-slate-400 font-medium transition-colors';
+    if (numEl) {
+      numEl.className = 'step-num w-5 h-5 rounded-full bg-slate-100 border border-slate-200 text-[10px] flex items-center justify-center font-bold text-slate-500';
+      numEl.textContent = String(idx + 1);
+    }
+  });
+}
+
+function completeAllStepperSteps() {
+  stepItems.forEach((item) => {
+    const numEl = item.querySelector('.step-num');
+    item.className = 'step-item flex items-center gap-2 text-emerald-600 font-semibold transition-colors';
+    if (numEl) {
+      numEl.className = 'step-num w-5 h-5 rounded-full bg-emerald-100 border border-emerald-300 text-[10px] flex items-center justify-center font-bold text-emerald-700';
+      numEl.textContent = '✓';
+    }
+  });
 }
 
 function setStatus(state) {
@@ -107,6 +176,7 @@ function setStatus(state) {
 
   const svg = runBtn.querySelector('svg');
   if (isRunning) {
+    resetStepper();
     runBtnLabel.textContent = 'Stop Process';
     runBtn.className = 'inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 active:scale-[0.98] text-white text-xs font-bold uppercase tracking-wider shadow-sm transition-all focus:outline-none focus:ring-2 focus:ring-rose-500 focus:ring-offset-2';
     if (svg) svg.innerHTML = '<use href="#icon-stop"/>';
@@ -122,6 +192,8 @@ function setStatus(state) {
     if (svg) svg.innerHTML = '<use href="#icon-play"/>';
 
     if (state === 'done') {
+      completeAllStepperSteps();
+      fetchLookupHealth();
       statusPill.className = 'inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200';
       if (statusDot) statusDot.className = 'w-2 h-2 rounded-full bg-emerald-500';
     } else if (state === 'error') {
@@ -275,3 +347,103 @@ async function checkAuth() {
   }
 }
 checkAuth();
+
+// --- Lookup Health Modal & Data Fetching ---
+
+const lookupHealthBadge = document.getElementById('lookup-health-badge');
+const lookupHealthDot = document.getElementById('lookup-health-dot');
+const lookupHealthText = document.getElementById('lookup-health-text');
+const lookupHealthModal = document.getElementById('lookup-health-modal');
+const closeLookupModalBtn = document.getElementById('close-lookup-modal-btn');
+const refreshLookupModalBtn = document.getElementById('refresh-lookup-modal-btn');
+const unmappedEansTbody = document.getElementById('unmapped-eans-tbody');
+const unmappedCitiesTbody = document.getElementById('unmapped-cities-tbody');
+const unmappedEansCount = document.getElementById('unmapped-eans-count');
+const unmappedCitiesCount = document.getElementById('unmapped-cities-count');
+const modalHealthDot = document.getElementById('modal-health-dot');
+const modalHealthSummary = document.getElementById('modal-health-summary');
+
+async function fetchLookupHealth() {
+  try {
+    const res = await fetch('/api/zepto/lookups/unmapped');
+    if (!res.ok) return;
+    const data = await res.json();
+    renderLookupHealth(data);
+  } catch (err) {
+    console.warn('Could not fetch lookup health:', err);
+  }
+}
+
+function renderLookupHealth(data) {
+  const unresolved = data.totalUnresolved || 0;
+  if (unresolved === 0) {
+    if (lookupHealthBadge) {
+      lookupHealthBadge.className = 'inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200/80 hover:bg-emerald-100 transition-colors';
+    }
+    if (lookupHealthDot) lookupHealthDot.className = 'w-2 h-2 rounded-full bg-emerald-500';
+    if (lookupHealthText) lookupHealthText.textContent = 'Lookups: Healthy';
+    if (modalHealthDot) modalHealthDot.className = 'w-2.5 h-2.5 rounded-full bg-emerald-500';
+    if (modalHealthSummary) modalHealthSummary.textContent = 'All EANs and Cities are mapped in reference tabs!';
+  } else {
+    if (lookupHealthBadge) {
+      lookupHealthBadge.className = 'inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200/80 hover:bg-amber-100 transition-colors animate-pulse';
+    }
+    if (lookupHealthDot) lookupHealthDot.className = 'w-2 h-2 rounded-full bg-amber-500';
+    if (lookupHealthText) lookupHealthText.textContent = `${unresolved} Unmapped Lookups`;
+    if (modalHealthDot) modalHealthDot.className = 'w-2.5 h-2.5 rounded-full bg-amber-500';
+    if (modalHealthSummary) modalHealthSummary.textContent = `${unresolved} unmapped reference item(s) detected. Please add them to the Google Sheet.`;
+  }
+
+  if (unmappedEansCount) unmappedEansCount.textContent = (data.unmappedEans || []).length;
+  if (unmappedCitiesCount) unmappedCitiesCount.textContent = (data.unmappedCities || []).length;
+
+  if (unmappedEansTbody) {
+    if (!data.unmappedEans || data.unmappedEans.length === 0) {
+      unmappedEansTbody.innerHTML = '<tr><td colspan="4" class="px-3 py-4 text-center text-slate-400 italic">No missing EANs detected.</td></tr>';
+    } else {
+      unmappedEansTbody.innerHTML = data.unmappedEans.map((i) => `
+        <tr class="hover:bg-slate-50">
+          <td class="px-3 py-2 font-mono font-semibold text-fuchsia-700">${i.value}</td>
+          <td class="px-3 py-2">${i.count || 1} time(s)</td>
+          <td class="px-3 py-2 text-slate-400 text-[10px]">${new Date(i.firstSeen).toLocaleDateString('en-IN')}</td>
+          <td class="px-3 py-2 text-slate-500">Add to 'EAN OMS Mapping' (Col A)</td>
+        </tr>
+      `).join('');
+    }
+  }
+
+  if (unmappedCitiesTbody) {
+    if (!data.unmappedCities || data.unmappedCities.length === 0) {
+      unmappedCitiesTbody.innerHTML = '<tr><td colspan="4" class="px-3 py-4 text-center text-slate-400 italic">No missing Cities detected.</td></tr>';
+    } else {
+      unmappedCitiesTbody.innerHTML = data.unmappedCities.map((i) => `
+        <tr class="hover:bg-slate-50">
+          <td class="px-3 py-2 font-semibold text-slate-800">${i.value}</td>
+          <td class="px-3 py-2">${i.count || 1} time(s)</td>
+          <td class="px-3 py-2 text-slate-400 text-[10px]">${new Date(i.firstSeen).toLocaleDateString('en-IN')}</td>
+          <td class="px-3 py-2 text-slate-500">Add to 'Zone Mapping' (Col A)</td>
+        </tr>
+      `).join('');
+    }
+  }
+}
+
+if (lookupHealthBadge) {
+  lookupHealthBadge.addEventListener('click', () => {
+    fetchLookupHealth();
+    lookupHealthModal?.classList.remove('hidden');
+  });
+}
+if (closeLookupModalBtn) {
+  closeLookupModalBtn.addEventListener('click', () => {
+    lookupHealthModal?.classList.add('hidden');
+  });
+}
+if (refreshLookupModalBtn) {
+  refreshLookupModalBtn.addEventListener('click', () => {
+    fetchLookupHealth();
+  });
+}
+
+// Fetch on startup
+fetchLookupHealth();

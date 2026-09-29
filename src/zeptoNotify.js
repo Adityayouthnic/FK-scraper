@@ -48,7 +48,32 @@ async function sendZeptoAlert(action, errorMsg, tailLogs = '') {
   return await sendZeptoFailureAlert(subject, body);
 }
 
+async function testSmtpConnection() {
+  const creds = getRawZeptoCredentials();
+  const imapUser = creds.imapUser || process.env.IMAP_USER;
+  const imapPassword = creds.imapPassword || process.env.IMAP_PASSWORD;
+  if (!imapUser || !imapPassword) {
+    return { success: false, error: 'IMAP_USER or IMAP_PASSWORD not configured.' };
+  }
+  try {
+    const transporter = nodemailer.createTransport({
+      host: 'smtp.gmail.com',
+      port: 465,
+      secure: true,
+      auth: {
+        user: imapUser,
+        pass: imapPassword.replace(/\s+/g, ''),
+      },
+    });
+    await transporter.verify();
+    return { success: true, message: `SMTP connected and verified successfully as ${imapUser}.` };
+  } catch (err) {
+    return { success: false, error: `SMTP verification failed: ${err.message}` };
+  }
+}
+
 module.exports = {
   sendZeptoAlert,
   sendZeptoFailureAlert,
+  testSmtpConnection,
 };

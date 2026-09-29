@@ -26,7 +26,11 @@ const {
   requireAdmin,
   SESSION_DURATION_MS,
 } = require('./src/auth');
-const { getSafeCredentials, updateCredentials } = require('./src/credentials');
+const { getSafeCredentials, updateCredentials, getRawZeptoCredentials } = require('./src/credentials');
+const { getUnmappedReport } = require('./src/unmappedStore');
+const { testImapConnection } = require('./src/zeptoOtp');
+const { testSmtpConnection } = require('./src/zeptoNotify');
+const { getSheetsClient, getAuthIdentity } = require('./src/googleAuth');
 
 const app = express();
 app.use(express.json());
@@ -145,6 +149,69 @@ app.post('/api/settings/test-webhook', requireAuth, requireAdmin, async (req, re
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
+});
+
+// --- Lookup Health & Diagnostics ---
+
+app.get('/api/zepto/lookups/unmapped', requireAuth, (req, res) => {
+  res.json(getUnmappedReport());
+});
+
+app.get('/api/health/lookups', requireAuth, (req, res) => {
+  res.json(getUnmappedReport());
+});
+
+app.post('/api/settings/test-connections', requireAuth, requireAdmin, async (req, res) => {
+  const results = {
+    sheets: { success: false },
+    imap: { success: false },
+    smtp: { success: false },
+  };
+
+  // 1. Test Google Sheets
+  try {
+    const creds = getRawZeptoCredentials();
+    const sheetId = creds.sheetId || process.env.GSHEET_ID;
+    if (!sheetId) {
+      results.sheets = { success: false, error: 'GSHEET_ID is not configured.' };
+    } else {
+      const sheets = await getSheetsClient();
+      const meta = await sheets.spreadsheets.get({ spreadsheetId: sheetId });
+      const ident = getAuthIdentity();
+      results.sheets = {
+        success: true,
+        title: meta.data.properties.title,
+        authType: ident.type,
+        identity: ident.identity,
+        message: `Connected to '${meta.data.properties.title}' via ${ident.type} (${ident.identity}).`,
+      };
+    }
+  } catch (err) {
+    results.sheets = { success: false, error: err.message };
+  }
+
+  // 2. Test IMAP
+  try {
+    const creds = getRawZeptoCredentials();
+    const imapRes = await testImapConnection({
+      host: creds.imapHost,
+      user: creds.imapUser,
+      password: creds.imapPassword,
+    });
+    results.imap = imapRes;
+  } catch (err) {
+    results.imap = { success: false, error: err.message };
+  }
+
+  // 3. Test SMTP
+  try {
+    const smtpRes = await testSmtpConnection();
+    results.smtp = smtpRes;
+  } catch (err) {
+    results.smtp = { success: false, error: err.message };
+  }
+
+  res.json(results);
 });
 
 // --- Protected User Management Endpoints ---

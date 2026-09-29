@@ -69,6 +69,23 @@ function getProfileDir() {
 }
 
 /**
+ * Removes stale Chrome profile lock files (SingletonLock, SingletonCookie, SingletonSocket)
+ * to prevent startup crashes when previous runs exited abruptly.
+ */
+function cleanupStaleProfileLocks(profileDir) {
+  if (!fs.existsSync(profileDir)) return;
+  const lockFiles = ['SingletonLock', 'SingletonCookie', 'SingletonSocket'];
+  for (const f of lockFiles) {
+    const p = path.join(profileDir, f);
+    if (fs.existsSync(p)) {
+      try {
+        fs.unlinkSync(p);
+      } catch (_) {}
+    }
+  }
+}
+
+/**
  * Formats a Date object to mm/dd/yyyy (portal input format).
  */
 function formatPortalDate(d) {
@@ -1389,6 +1406,9 @@ async function runZeptoJob(send, options = {}) {
   };
 
   try {
+    // Gracefully clean up stale SingletonLocks from aborted runs
+    cleanupStaleProfileLocks(profileDir);
+
     // Launch persistent browser context
     context = await awaitCancellable(run, chromium.launchPersistentContext(profileDir, launchOptions));
     run.context = context;
@@ -1499,6 +1519,10 @@ async function runZeptoJob(send, options = {}) {
         log(wrappedSend, '[zepto.daily] ----------------------------------------');
         const salesRes = await awaitCancellable(run, runSalesSync(page, creds, options, wrappedSend, run));
 
+        if (run.cancelled) throw new RunCancelledError();
+
+        log(wrappedSend, '[zepto.daily] Stage 1 complete. Enforcing 5s cooldown before Stage 2...');
+        await new Promise((resolve) => setTimeout(resolve, 5000));
         if (run.cancelled) throw new RunCancelledError();
 
         log(wrappedSend, '[zepto.daily] ----------------------------------------');
