@@ -416,6 +416,7 @@ async function appendSalesData(sheets, sheetId, transformedRows, send = () => {}
   const values = buildSheetValues(pending, startRow);
 
   // 5. Write values
+  const maxRows = sheetMeta.properties?.gridProperties?.rowCount || 1000;
   try {
     if (endRow > maxRows) {
       const addCount = endRow - maxRows + 200;
