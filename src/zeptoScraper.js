@@ -1483,6 +1483,14 @@ async function runLoginCheck(page, creds, options, send = () => {}, run = null) 
  * @returns {Promise<Object>} Job execution summary
  */
 async function runZeptoJob(send, options = {}) {
+  const logBuffer = [];
+  const wrappedSend = (type, payload = {}) => {
+    if (type === 'log' && payload.message) {
+      logBuffer.push(payload.message);
+    }
+    send(type, payload);
+  };
+
   const creds = getRawZeptoCredentials();
   const action = options.action || options.module || 'daily';
 
@@ -1496,11 +1504,11 @@ async function runZeptoJob(send, options = {}) {
   }
 
   if (isHeaded && !hasDisplay) {
-    log(send, '[zepto.browser] Cloud environment has no X11 display. Launching headless browser with real-time Live Canvas view.');
+    log(wrappedSend, '[zepto.browser] Cloud environment has no X11 display. Launching headless browser with real-time Live Canvas view.');
     isHeaded = false;
   }
 
-  log(send, `[zepto] Initializing pure Node.js Zepto Engine (action: ${action}, headless: ${!isHeaded})...`);
+  log(wrappedSend, `[zepto] Initializing pure Node.js Zepto Engine (action: ${action}, headless: ${!isHeaded})...`);
 
   const run = createRunContext('zepto');
   const profileDir = getProfileDir();
@@ -1533,14 +1541,6 @@ async function runZeptoJob(send, options = {}) {
   let context = null;
   let page = null;
   let cdpClient = null;
-  const logBuffer = [];
-
-  const wrappedSend = (type, payload = {}) => {
-    if (type === 'log' && payload.message) {
-      logBuffer.push(payload.message);
-    }
-    send(type, payload);
-  };
 
   try {
     // Gracefully clean up stale SingletonLocks from aborted runs
