@@ -234,22 +234,31 @@ function isDateless(reportType) {
 }
 
 /**
- * Extracts and parses dates like "12 Aug 2026" from table cell text.
+ * Extracts and parses dates like "12 Aug 2026", "28 Sep 2026 - 28 Sep 2026", "28-09-2026"
+ * handling hyphens, slashes, en-dashes, and em-dashes.
  */
 function parseTableDates(text) {
-  const matches = String(text || '').match(TABLE_DATE_RE);
-  if (!matches) return [];
+  if (!text) return [];
+  const cleaned = String(text).replace(/[\u2013\u2014]/g, '-').trim();
+  const re = /\b(\d{1,2})[-/\s]+([A-Za-z]{3,}|[0-9]{1,2})[-/\s]+(\d{4})\b/g;
   const monthNames = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
-
-  return matches.map((m) => {
-    const parts = m.trim().split(/\s+/);
-    if (parts.length < 3) return null;
-    const day = parseInt(parts[0], 10);
-    const monStr = parts[1].slice(0, 3).toLowerCase();
-    const yr = parseInt(parts[2], 10);
-    const monIdx = monthNames.indexOf(monStr);
-    return monIdx !== -1 ? new Date(yr, monIdx, day) : null;
-  }).filter(Boolean);
+  const results = [];
+  let m;
+  while ((m = re.exec(cleaned)) !== null) {
+    const day = parseInt(m[1], 10);
+    const mStr = m[2].toLowerCase();
+    const yr = parseInt(m[3], 10);
+    let monIdx = -1;
+    if (/^\d+$/.test(mStr)) {
+      monIdx = parseInt(mStr, 10) - 1;
+    } else {
+      monIdx = monthNames.findIndex((name) => mStr.startsWith(name));
+    }
+    if (monIdx >= 0 && monIdx < 12 && day >= 1 && day <= 31) {
+      results.push(new Date(yr, monIdx, day));
+    }
+  }
+  return results;
 }
 
 /**
@@ -270,7 +279,7 @@ function parsePortalDate(str) {
  */
 function rangeMatches(rangeCell, startStr, endStr) {
   const found = parseTableDates(rangeCell);
-  if (found.length !== 2) return false;
+  if (!found || found.length === 0) return false;
 
   const sDate = parsePortalDate(startStr);
   const eDate = parsePortalDate(endStr);
@@ -281,7 +290,13 @@ function rangeMatches(rangeCell, startStr, endStr) {
     d1.getMonth() === d2.getMonth() &&
     d1.getDate() === d2.getDate();
 
-  return sameDay(found[0], sDate) && sameDay(found[1], eDate);
+  if (found.length >= 2) {
+    return sameDay(found[0], sDate) && sameDay(found[1], eDate);
+  }
+  if (found.length === 1 && sameDay(sDate, eDate)) {
+    return sameDay(found[0], sDate);
+  }
+  return false;
 }
 
 /**
@@ -536,7 +551,7 @@ async function autoLogin(page, creds, send = () => {}, run = null) {
 }
 
 /**
- * Opens or focuses the reports page and waits for it to be interactive.
+ * Opens or focuses the reports page and waits for its data grid to be fully populated.
  */
 async function openReports(page, send = () => {}, run = null) {
   if (run?.cancelled) throw new RunCancelledError();
@@ -549,8 +564,8 @@ async function openReports(page, send = () => {}, run = null) {
     await page.goto(REPORTS_URL, { waitUntil: 'domcontentloaded' });
   }
 
-  // Wait for the reports page components to stabilize
-  for (let i = 0; i < 20; i++) {
+  // Wait for the reports page components and server-rendered data rows to stabilize
+  for (let i = 0; i < 25; i++) {
     if (run?.cancelled) throw new RunCancelledError();
 
     if (page.url().includes('/login')) {
@@ -564,18 +579,12 @@ async function openReports(page, send = () => {}, run = null) {
       return false;
     }
 
-    const reqBtn = page.getByRole('button', { name: 'Request Report' });
-    if (await reqBtn.count().then(c => c > 0).catch(() => false) && await reqBtn.first().isVisible().catch(() => false)) {
-      await waitForTableReady(page, 5000);
-      return true;
-    }
-
     const tableRows = await getTableRows(page);
     if (tableRows.length > 0) {
       return true;
     }
 
-    await page.waitForTimeout(400);
+    await page.waitForTimeout(500);
   }
 
   return true;
@@ -630,12 +639,18 @@ async function ensureSession(page, creds, send = () => {}, run = null) {
 }
 
 /**
- * Waits for the reports table to have at least one row rendered.
+ * Waits for the reports table to have at least one valid row rendered.
  */
 async function waitForTableReady(page, timeoutMs = 12000) {
-  try {
-    await page.locator('table tbody tr, table tr').first().waitFor({ state: 'visible', timeout: timeoutMs });
-  } catch {}
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const rows = await getTableRows(page);
+    if (rows && rows.length > 0) {
+      return true;
+    }
+    await page.waitForTimeout(400);
+  }
+  return false;
 }
 
 /**
@@ -644,77 +659,55 @@ async function waitForTableReady(page, timeoutMs = 12000) {
 async function getTableRows(page) {
   try {
     return await page.evaluate(() => {
-      // Find header column mappings if available
-      const ths = Array.from(document.querySelectorAll('table thead th'));
-      const headerNames = ths.map((th) => (th.innerText || th.textContent || '').trim().toLowerCase());
-
-      const reqAtIdx = headerNames.findIndex((h) => h.includes('requested'));
-      const reqIdIdx = headerNames.findIndex((h) => h.includes('request id') || h.includes('id'));
-      const typeIdx = headerNames.findIndex((h) => h.includes('type'));
-      const rangeIdx = headerNames.findIndex((h) => h.includes('range') || h.includes('date'));
-      const statusIdx = headerNames.findIndex((h) => h.includes('status'));
-      const actionIdx = headerNames.findIndex((h) => h.includes('action'));
-
       const trs = Array.from(document.querySelectorAll('table tbody tr'));
       return trs
         .map((r, idx) => {
-          const cells = Array.from(r.querySelectorAll('td, th'));
+          const cells = r.cells && r.cells.length ? Array.from(r.cells) : Array.from(r.querySelectorAll('td, th'));
           if (cells.length < 3) return null;
 
           const cellTexts = cells.map((c) => (c.innerText || c.textContent || '').trim());
 
-          // Primary: Read via header indices if found
-          let requested_at = reqAtIdx >= 0 && reqAtIdx < cellTexts.length ? cellTexts[reqAtIdx] : '';
-          let request_id = '';
-          let type = typeIdx >= 0 && typeIdx < cellTexts.length ? cellTexts[typeIdx] : '';
-          let range = rangeIdx >= 0 && rangeIdx < cellTexts.length ? cellTexts[rangeIdx] : '';
-          let status = statusIdx >= 0 && statusIdx < cellTexts.length ? cellTexts[statusIdx] : '';
-          let actionText = actionIdx >= 0 && actionIdx < cellTexts.length ? cellTexts[actionIdx] : '';
+          // Standard Zepto portal columns:
+          // 0: Requested At, 1: Request ID, 2: Report Type, 3: Date Range, 4: Status, 5: Actions
+          let requested_at = cellTexts[0] || '';
+          let request_id = cellTexts[1] || '';
+          let type = cellTexts[2] || '';
+          let range = cellTexts[3] || '';
+          let status = cellTexts[4] || '';
+          let actionText = cellTexts[5] || '';
 
-          // Request ID: check title attribute or text
-          if (reqIdIdx >= 0 && reqIdIdx < cells.length) {
-            const idCell = cells[reqIdIdx];
-            const title = idCell.getAttribute('title') || idCell.querySelector('[title]')?.getAttribute('title');
+          // Check if Request ID cell has a full UUID in title attribute
+          if (cells[1]) {
+            const title = cells[1].getAttribute('title') || cells[1].querySelector('[title]')?.getAttribute('title');
             if (title && /[0-9a-fA-F-]{16,}/.test(title)) {
               request_id = title.trim();
-            } else {
-              request_id = cellTexts[reqIdIdx];
             }
           }
 
-          // Content-based heuristic fallback if headers didn't resolve all fields
-          for (let i = 0; i < cells.length; i++) {
-            const txt = cellTexts[i];
-            const cell = cells[i];
+          // Header-based mapping fallback in case columns are shifted
+          const ths = Array.from(document.querySelectorAll('table thead th'));
+          if (ths.length >= 4) {
+            const headerNames = ths.map((th) => (th.innerText || th.textContent || '').trim().toLowerCase());
+            const reqAtIdx = headerNames.findIndex((h) => h.includes('requested'));
+            const reqIdIdx = headerNames.findIndex((h) => h.includes('request id') || (h.includes('id') && !h.includes('requested')));
+            const typeIdx = headerNames.findIndex((h) => h.includes('type'));
+            const rangeIdx = headerNames.findIndex((h) => h.includes('range') || (h.includes('date') && !h.includes('requested')));
+            const statusIdx = headerNames.findIndex((h) => h.includes('status'));
+            const actionIdx = headerNames.findIndex((h) => h.includes('action'));
 
-            if (!status && (txt.includes('Completed') || txt.includes('Generating') || txt.includes('Failed') || txt.includes('In Progress'))) {
-              status = txt;
+            if (reqAtIdx >= 0 && cellTexts[reqAtIdx]) requested_at = cellTexts[reqAtIdx];
+            if (reqIdIdx >= 0 && cellTexts[reqIdIdx]) {
+              const idCell = cells[reqIdIdx];
+              const title = idCell?.getAttribute('title') || idCell?.querySelector('[title]')?.getAttribute('title');
+              request_id = (title && /[0-9a-fA-F-]{16,}/.test(title)) ? title.trim() : cellTexts[reqIdIdx];
             }
-            if (!type && (/^sales$/i.test(txt) || /^inventory$/i.test(txt) || /sales/i.test(txt))) {
-              type = txt;
-            }
-            if (!range && (/\d{1,2}\s+[A-Za-z]{3,}\s+\d{4}/.test(txt) && txt.includes('-'))) {
-              range = txt;
-            } else if (!range && txt === '-') {
-              range = '-';
-            }
-            if (!actionText && /download/i.test(txt)) {
-              actionText = txt;
-            }
-            if (!request_id) {
-              const title = cell.getAttribute('title') || cell.querySelector('[title]')?.getAttribute('title');
-              if (title && /[0-9a-fA-F-]{16,}/.test(title)) {
-                request_id = title.trim();
-              } else if (/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}/.test(txt) || /[0-9a-fA-F-]{16,}/.test(txt)) {
-                request_id = txt;
-              }
-            }
-            if (!requested_at && (/\d{1,2}\s+[A-Za-z]{3,}\s+\d{4}/.test(txt) && !txt.includes('-'))) {
-              requested_at = txt;
-            }
+            if (typeIdx >= 0 && cellTexts[typeIdx]) type = cellTexts[typeIdx];
+            if (rangeIdx >= 0 && cellTexts[rangeIdx]) range = cellTexts[rangeIdx];
+            if (statusIdx >= 0 && cellTexts[statusIdx]) status = cellTexts[statusIdx];
+            if (actionIdx >= 0 && cellTexts[actionIdx]) actionText = cellTexts[actionIdx];
           }
 
-          const hasDownloadBtn = Boolean(r.querySelector('button, a, [role="button"]') && /download/i.test(r.innerText));
+          const hasDownloadBtn = Boolean(r.querySelector('button, a, [role="button"]') && /download/i.test(r.innerText)) || /download/i.test(actionText);
 
           return {
             row_index: idx,
@@ -723,10 +716,10 @@ async function getTableRows(page) {
             type,
             range,
             status,
-            has_download: /download/i.test(actionText) || hasDownloadBtn,
+            has_download: hasDownloadBtn,
           };
         })
-        .filter(Boolean);
+        .filter((r) => r && (r.request_id || r.type || r.status));
     });
   } catch {
     return [];
@@ -734,23 +727,63 @@ async function getTableRows(page) {
 }
 
 /**
- * Searches the table for a completed or generating report matching criteria.
+ * Searches the table for an existing report matching criteria.
+ * Prioritizes already 'Completed' reports over 'In Progress' reports to avoid unnecessary generation.
  */
-async function findExistingReport(page, reportType, startStr, endStr) {
-  const rows = await getTableRows(page);
+async function findExistingReport(page, reportType, startStr, endStr, send = () => {}) {
+  // Wait up to 10 seconds for table rows to be rendered by Zepto
+  let rows = [];
+  for (let i = 0; i < 20; i++) {
+    rows = await getTableRows(page);
+    if (rows && rows.length > 0) break;
+    await page.waitForTimeout(500);
+  }
+
+  if (!rows || rows.length === 0) {
+    log(send, `[zepto.rep] Reports table is currently empty.`);
+    return null;
+  }
+
+  log(send, `[zepto.rep] Evaluating ${rows.length} table rows for existing ${reportType} report (${startStr || 'today'} -> ${endStr || 'today'})...`);
+
+  const matchingRows = [];
   for (const row of rows) {
     if (!typeMatches(row.type, reportType)) continue;
     if (row.status.toLowerCase().includes('failed')) continue;
 
+    let rMatch = false;
     if (startStr && endStr) {
-      if (!rangeMatches(row.range, startStr, endStr)) continue;
+      rMatch = rangeMatches(row.range, startStr, endStr);
     } else {
-      if (/\d{1,2}\s+[A-Za-z]{3,}\s+\d{4}/.test(row.range)) continue;
-      if (!isRequestedToday(row.requested_at)) continue;
+      const hasDateRange = /\d{1,2}\s+[A-Za-z]{3,}\s+\d{4}/.test(row.range);
+      rMatch = !hasDateRange || isRequestedToday(row.requested_at);
     }
-    return row;
+
+    if (rMatch) {
+      matchingRows.push(row);
+    }
   }
-  return null;
+
+  if (matchingRows.length === 0) {
+    log(send, `[zepto.rep] No existing rows matched type '${reportType}' and range '${startStr || 'today'} -> ${endStr || 'today'}'.`);
+    return null;
+  }
+
+  log(send, `[zepto.rep] Found ${matchingRows.length} matching candidate row(s) in table.`);
+
+  // PRIORITY 1: Prefer any row that is already COMPLETED (or has download button ready)!
+  const completedMatch = matchingRows.find(
+    (r) => r.status.toLowerCase().includes('completed') || r.has_download
+  );
+  if (completedMatch) {
+    log(send, `[zepto.rep] Reusing existing COMPLETED report: ID ${completedMatch.request_id || 'row ' + completedMatch.row_index} (requested: ${completedMatch.requested_at}).`);
+    return completedMatch;
+  }
+
+  // PRIORITY 2: If no completed row, reuse the active in-progress / generating row to avoid requesting a duplicate!
+  const pendingMatch = matchingRows[0];
+  log(send, `[zepto.rep] Reusing existing pending report: ID ${pendingMatch.request_id || 'row ' + pendingMatch.row_index} (status: ${pendingMatch.status}).`);
+  return pendingMatch;
 }
 
 /**
@@ -1241,11 +1274,11 @@ async function locateOrRequestReport(page, reportType, startStr = null, endStr =
   if (!force) {
     if (run?.cancelled) throw new RunCancelledError();
     await openReports(page, send, run);
-    await waitForTableReady(page, 6000);
+    await waitForTableReady(page, 10000);
 
-    const existing = await findExistingReport(page, reportType, startStr, endStr);
+    const existing = await findExistingReport(page, reportType, startStr, endStr, send);
     if (existing) {
-      if (existing.status.toLowerCase().includes('completed')) {
+      if (existing.status.toLowerCase().includes('completed') || existing.has_download) {
         log(send, `[zepto.rep] Existing completed report found for ${span} (ID: ${existing.request_id || 'row ' + existing.row_index}). Directly downloading without regenerating!`);
         return existing.request_id || `row_${existing.row_index}`;
       }
