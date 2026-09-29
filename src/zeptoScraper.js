@@ -430,6 +430,7 @@ async function openReports(page, send = () => {}, run = null) {
 
     const reqBtn = page.getByRole('button', { name: 'Request Report' });
     if (await reqBtn.count().then(c => c > 0).catch(() => false) && await reqBtn.first().isVisible().catch(() => false)) {
+      await waitForTableReady(page, 5000);
       return true;
     }
 
@@ -467,21 +468,55 @@ async function ensureSession(page, creds, send = () => {}, run = null) {
 }
 
 /**
+ * Waits for the reports table to have at least one row rendered.
+ */
+async function waitForTableReady(page, timeoutMs = 12000) {
+  try {
+    await page.locator('table tbody tr, table tr').first().waitFor({ state: 'visible', timeout: timeoutMs });
+  } catch {}
+}
+
+/**
  * Reads all rows from the Reports table.
  */
 async function getTableRows(page) {
   try {
     return await page.evaluate(() => {
-      const rows = Array.from(document.querySelectorAll('table tbody tr'));
-      return rows
-        .map((r) => ({
-          requested_at: (r.cells[0]?.innerText || '').trim(),
-          request_id: (r.cells[1]?.innerText || '').trim(),
-          type: (r.cells[2]?.innerText || '').trim(),
-          range: (r.cells[3]?.innerText || '').trim(),
-          status: (r.cells[4]?.innerText || '').trim(),
-        }))
-        .filter((r) => r.request_id);
+      const trs = Array.from(document.querySelectorAll('table tbody tr'));
+      return trs
+        .map((r, idx) => {
+          const cells = Array.from(r.querySelectorAll('td, th'));
+          if (cells.length < 3) return null;
+
+          const requested_at = (cells[0]?.innerText || cells[0]?.textContent || '').trim();
+
+          const idCell = cells[1];
+          let request_id = '';
+          if (idCell) {
+            const title = idCell.getAttribute('title') || idCell.querySelector('[title]')?.getAttribute('title');
+            if (title && /[0-9a-fA-F-]{16,}/.test(title)) {
+              request_id = title.trim();
+            } else {
+              request_id = (idCell.innerText || idCell.textContent || '').trim();
+            }
+          }
+
+          const type = (cells[2]?.innerText || cells[2]?.textContent || '').trim();
+          const range = (cells[3]?.innerText || cells[3]?.textContent || '').trim();
+          const status = (cells[4]?.innerText || cells[4]?.textContent || '').trim();
+          const actionText = (cells[5]?.innerText || cells[5]?.textContent || '').trim();
+
+          return {
+            row_index: idx,
+            requested_at,
+            request_id,
+            type,
+            range,
+            status,
+            has_download: /download/i.test(actionText),
+          };
+        })
+        .filter(Boolean);
     });
   } catch {
     return [];
@@ -500,7 +535,7 @@ async function findExistingReport(page, reportType, startStr, endStr) {
     if (startStr && endStr) {
       if (!rangeMatches(row.range, startStr, endStr)) continue;
     } else {
-      if (row.range.match(TABLE_DATE_RE)) continue;
+      if (/\d{1,2}\s+[A-Za-z]{3,}\s+\d{4}/.test(row.range)) continue;
       if (!isRequestedToday(row.requested_at)) continue;
     }
     return row;
@@ -608,9 +643,10 @@ async function requestReport(page, reportType, startStr = null, endStr = null, s
   log(send, `[zepto.rep] Requesting report '${reportType}'${span}...`);
 
   await openReports(page, send, run);
+  await waitForTableReady(page, 6000);
 
   const rowsBefore = await getTableRows(page);
-  const idsBefore = new Set(rowsBefore.map((r) => r.request_id));
+  const idsBefore = new Set(rowsBefore.map((r) => r.request_id).filter(Boolean));
 
   if (run?.cancelled) throw new RunCancelledError();
 
@@ -671,9 +707,14 @@ async function requestReport(page, reportType, startStr = null, endStr = null, s
   await submitBtn.click();
   log(send, '[zepto.rep] Report request submitted. Waiting for processing...');
 
-  for (let i = 0; i < 10; i++) {
+  // Wait for modal dialog to dismiss
+  try {
+    await page.locator('[role="dialog"]').waitFor({ state: 'hidden', timeout: 8000 });
+  } catch {}
+
+  for (let i = 0; i < 5; i++) {
     if (run?.cancelled) throw new RunCancelledError();
-    await page.waitForTimeout(300);
+    await page.waitForTimeout(400);
   }
 
   return idsBefore;
@@ -682,41 +723,124 @@ async function requestReport(page, reportType, startStr = null, endStr = null, s
 /**
  * Refreshes the reports table until the target request status is 'Completed'.
  */
-async function waitForReportCompletion(page, beforeIds, targetRequestId = null, send = () => {}, timeoutSec = 300, run = null) {
+async function waitForReportCompletion(
+  page,
+  beforeIds = new Set(),
+  targetRequestId = null,
+  send = () => {},
+  timeoutSec = 300,
+  run = null,
+  reportType = null,
+  startStr = null,
+  endStr = null
+) {
   const deadline = Date.now() + timeoutSec * 1000;
   let requestId = targetRequestId;
+  let iteration = 0;
 
   while (Date.now() < deadline) {
     if (run?.cancelled) throw new RunCancelledError();
+    iteration++;
 
-    await page.reload({ waitUntil: 'domcontentloaded' });
-    await page.waitForTimeout(3000);
+    // On iteration 1: modal was just submitted, check the rendered DOM first without reloading!
+    // On iteration > 1: reload the page to refresh status from backend
+    if (iteration > 1) {
+      log(send, `[zepto.rep] Refreshing reports table (check #${iteration})...`);
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      await waitForTableReady(page, 15000);
+      await page.waitForTimeout(2000);
+    } else {
+      await waitForTableReady(page, 8000);
+      await page.waitForTimeout(1500);
+    }
 
     if (run?.cancelled) throw new RunCancelledError();
     const rows = await getTableRows(page);
+    log(send, `[zepto.rep] Table inspect: found ${rows.length} row(s) in view.`);
 
-    if (!requestId) {
-      const newRows = rows.filter((r) => !beforeIds.has(r.request_id));
+    let matchedRow = null;
+
+    // Strategy A: If target requestId is already known, match by exact ID or prefix
+    if (requestId && requestId !== 'top_row') {
+      const cleanReqId = requestId.replace(/\.+$/, '');
+      matchedRow = rows.find(
+        (r) =>
+          r.request_id &&
+          (r.request_id === requestId ||
+            r.request_id.startsWith(cleanReqId) ||
+            cleanReqId.startsWith(r.request_id.replace(/\.+$/, '')))
+      );
+    }
+
+    // Strategy B: Diff against beforeIds (brand new request ID)
+    if (!matchedRow && beforeIds && beforeIds.size > 0) {
+      const newRows = rows.filter((r) => r.request_id && !beforeIds.has(r.request_id));
       if (newRows.length > 0) {
-        requestId = newRows[0].request_id;
-        log(send, `[zepto.rep] Registered new report request: ${requestId}`);
+        matchedRow = newRows[0];
+        requestId = matchedRow.request_id;
+        log(send, `[zepto.rep] Registered new report request ID via table diff: ${requestId}`);
       }
     }
 
-    if (requestId) {
-      const targetRow = rows.find((r) => r.request_id === requestId);
-      if (targetRow) {
-        if (targetRow.status.includes('Completed')) {
-          log(send, `[zepto.rep] Request ${requestId} is Completed!`);
-          return requestId;
-        }
-        if (targetRow.status.includes('Failed')) {
-          throw new Error(`Zepto portal indicated report ${requestId} failed to generate.`);
-        }
-        log(send, `[zepto.rep] Report ${requestId} is generating (status: ${targetRow.status})...`);
+    // Strategy C: Topmost row match (Zepto puts newly requested reports at row 0)
+    if (!matchedRow && rows.length > 0 && reportType) {
+      const topRow = rows[0];
+      const typeOk = typeMatches(topRow.type, reportType);
+      let rangeOk = false;
+      if (startStr && endStr) {
+        rangeOk = rangeMatches(topRow.range, startStr, endStr);
       } else {
-        log(send, `[zepto.rep] Waiting for request ${requestId} to appear in table...`);
+        rangeOk = !/\d{1,2}\s+[A-Za-z]{3,}\s+\d{4}/.test(topRow.range) || isRequestedToday(topRow.requested_at);
       }
+
+      if (typeOk && rangeOk) {
+        matchedRow = topRow;
+        if (!requestId && topRow.request_id) {
+          requestId = topRow.request_id;
+        }
+        log(send, `[zepto.rep] Topmost table row matches requested report '${reportType}': ${requestId || '(row 0)'}`);
+      }
+    }
+
+    // Strategy D: Search any row matching reportType and date range that is Completed or Generating
+    if (!matchedRow && rows.length > 0 && reportType) {
+      for (const r of rows) {
+        if (!typeMatches(r.type, reportType)) continue;
+        if (r.status.includes('Failed')) continue;
+
+        let rangeOk = false;
+        if (startStr && endStr) {
+          rangeOk = rangeMatches(r.range, startStr, endStr);
+        } else {
+          rangeOk = !/\d{1,2}\s+[A-Za-z]{3,}\s+\d{4}/.test(r.range) && isRequestedToday(r.requested_at);
+        }
+
+        if (rangeOk) {
+          matchedRow = r;
+          if (!requestId && r.request_id) {
+            requestId = r.request_id;
+          }
+          log(send, `[zepto.rep] Found matching report row in table: ${requestId || r.type}`);
+          break;
+        }
+      }
+    }
+
+    // Evaluate matched row status
+    if (matchedRow) {
+      const statusText = matchedRow.status || '';
+      log(send, `[zepto.rep] Report status: "${statusText}" (ID: ${matchedRow.request_id || requestId || 'top row'})`);
+
+      if (statusText.toLowerCase().includes('completed')) {
+        log(send, `[zepto.rep] Request ${matchedRow.request_id || requestId || 'top row'} is Completed!`);
+        return matchedRow.request_id || requestId || 'top_row';
+      }
+
+      if (statusText.toLowerCase().includes('failed')) {
+        throw new Error(`Zepto portal indicated report generation failed for ${reportType || 'report'}.`);
+      }
+
+      log(send, `[zepto.rep] Report is currently generating (${statusText}). Waiting before next refresh...`);
     } else {
       log(send, '[zepto.rep] Waiting for request to appear in table...');
     }
@@ -734,48 +858,123 @@ async function waitForReportCompletion(page, beforeIds, targetRequestId = null, 
 /**
  * Obtains the report CSV data via presigned S3 URL or button download interception.
  */
-async function fetchReportData(page, requestId, send = () => {}, run = null) {
+async function fetchReportData(page, requestId, send = () => {}, run = null, reportType = null) {
   if (run?.cancelled) throw new RunCancelledError();
-  const apiPath = `/api/v1/reports/${requestId}/download`;
-  log(send, `[zepto.rep] Resolving download URL for report ${requestId}...`);
+  log(send, `[zepto.rep] Resolving download for report ${requestId || reportType || 'latest'}...`);
 
-  const rowLocator = page.locator('table tbody tr').filter({ hasText: requestId }).first();
-  const downloadLink = rowLocator.getByText('Download', { exact: false }).first();
+  await waitForTableReady(page, 6000);
 
-  const [response] = await Promise.all([
-    page.waitForResponse(
+  // 1. Locate the row containing Download button
+  let rowLocator = null;
+  const cleanId = (requestId || '').replace(/\.+$/, '').trim();
+
+  if (cleanId && cleanId !== 'top_row') {
+    const shortId = cleanId.slice(0, 16);
+    const candidate = page.locator('table tbody tr').filter({ hasText: shortId }).first();
+    if (await candidate.count().then((c) => c > 0).catch(() => false)) {
+      rowLocator = candidate;
+    }
+  }
+
+  if (!rowLocator && reportType) {
+    const typeBadge = reportType.toLowerCase().includes('sale') ? 'SALES' : 'INVENTORY';
+    const candidate = page
+      .locator('table tbody tr')
+      .filter({ hasText: typeBadge })
+      .filter({ hasText: 'Download' })
+      .first();
+    if (await candidate.count().then((c) => c > 0).catch(() => false)) {
+      rowLocator = candidate;
+    }
+  }
+
+  if (!rowLocator) {
+    rowLocator = page.locator('table tbody tr').filter({ hasText: 'Download' }).first();
+  }
+
+  const downloadBtn = rowLocator.getByText('Download', { exact: false }).first();
+  await downloadBtn.scrollIntoViewIfNeeded().catch(() => {});
+
+  // Set up listeners BEFORE clicking:
+  const responsePromise = page
+    .waitForResponse(
       (res) =>
         res.request().method() === 'GET' &&
-        (res.url().includes(`/reports/${requestId}/download`) || res.url().includes(apiPath)),
-      { timeout: 60000 }
-    ),
-    downloadLink.click(),
+        res.url().includes('/reports/') &&
+        res.url().includes('/download'),
+      { timeout: 45000 }
+    )
+    .catch(() => null);
+
+  const downloadEventPromise = page.waitForEvent('download', { timeout: 45000 }).catch(() => null);
+
+  log(send, '[zepto.rep] Clicking Download button in portal...');
+  await downloadBtn.hover().catch(() => {});
+  await page.waitForTimeout(200);
+  await downloadBtn.click();
+
+  const [apiResponse, downloadEvent] = await Promise.all([
+    responsePromise,
+    downloadEventPromise,
   ]);
 
   if (run?.cancelled) throw new RunCancelledError();
-  if (!response.ok()) {
-    throw new Error(`Zepto download API returned HTTP ${response.status()}`);
+
+  let csvText = '';
+  let filename = '';
+
+  // Strategy 1: Read presignedS3Url from API response
+  if (apiResponse && apiResponse.ok()) {
+    try {
+      const payload = await apiResponse.json();
+      const signedUrl = payload?.data?.presignedS3Url;
+      if (signedUrl) {
+        log(send, '[zepto.rep] Captured presigned S3 URL from download API. Fetching CSV...');
+        const s3Res = await fetch(signedUrl);
+        if (s3Res.ok) {
+          csvText = await s3Res.text();
+          const urlObj = new URL(signedUrl);
+          const rawFilename = path.basename(decodeURIComponent(urlObj.pathname)) || `report_${Date.now()}.csv`;
+          filename = rawFilename.replace(/[\\/:*?"<>|]/g, '_');
+        }
+      }
+    } catch (e) {
+      log(send, `[zepto.rep] Presigned URL parse note: ${e.message}`);
+    }
   }
 
-  const payload = await response.json();
-  const signedUrl = payload?.data?.presignedS3Url;
-
-  if (!signedUrl) {
-    throw new Error(`Could not obtain presignedS3Url for report ${requestId}`);
+  // Strategy 2: Use browser download stream if available
+  if (!csvText && downloadEvent) {
+    log(send, '[zepto.rep] Using browser download stream...');
+    try {
+      const stream = await downloadEvent.createReadStream();
+      const chunks = [];
+      for await (const chunk of stream) {
+        chunks.push(chunk);
+      }
+      csvText = Buffer.concat(chunks).toString('utf8');
+      filename = downloadEvent.suggestedFilename() || `report_${Date.now()}.csv`;
+    } catch (e) {
+      log(send, `[zepto.rep] Download stream read note: ${e.message}`);
+    }
   }
 
-  log(send, '[zepto.rep] Downloading report CSV from presigned S3 storage...');
-  if (run?.cancelled) throw new RunCancelledError();
-  const s3Res = await fetch(signedUrl);
-  if (!s3Res.ok) {
-    throw new Error(`Failed to download report from S3: HTTP ${s3Res.status}`);
+  // Strategy 3: Check downloads directory if Playwright saved the file
+  if (!csvText && downloadEvent) {
+    try {
+      const filePath = await downloadEvent.path();
+      if (filePath && fs.existsSync(filePath)) {
+        csvText = fs.readFileSync(filePath, 'utf8');
+        filename = downloadEvent.suggestedFilename() || path.basename(filePath);
+      }
+    } catch {}
   }
 
-  const csvText = await s3Res.text();
-  const urlObj = new URL(signedUrl);
-  const rawFilename = path.basename(decodeURIComponent(urlObj.pathname)) || `report_${requestId}.csv`;
-  const filename = rawFilename.replace(/[\\/:*?"<>|]/g, '_');
+  if (!csvText || csvText.trim().length === 0) {
+    throw new Error('Failed to capture report CSV from either S3 presigned URL or browser download event.');
+  }
 
+  log(send, `[zepto.rep] Successfully acquired report (${filename}, ${csvText.length.toLocaleString('en-IN')} bytes).`);
   return { filename, csvText };
 }
 
@@ -788,21 +987,22 @@ async function locateOrRequestReport(page, reportType, startStr = null, endStr =
   if (!force) {
     if (run?.cancelled) throw new RunCancelledError();
     await openReports(page, send, run);
+    await waitForTableReady(page, 6000);
 
     const existing = await findExistingReport(page, reportType, startStr, endStr);
     if (existing) {
       if (existing.status.includes('Completed')) {
-        log(send, `[zepto.rep] Report already generated for ${span} (${existing.request_id}). Reusing it!`);
-        return existing.request_id;
+        log(send, `[zepto.rep] Report already generated for ${span} (${existing.request_id || 'top row'}). Reusing it!`);
+        return existing.request_id || 'top_row';
       }
-      log(send, `[zepto.rep] A request for ${span} is already running (${existing.request_id}). Waiting on it...`);
-      return await waitForReportCompletion(page, new Set(), existing.request_id, send, 300, run);
+      log(send, `[zepto.rep] A request for ${span} is already running (${existing.request_id || 'top row'}). Waiting on it...`);
+      return await waitForReportCompletion(page, new Set(), existing.request_id, send, 300, run, reportType, startStr, endStr);
     }
   }
 
   if (run?.cancelled) throw new RunCancelledError();
   const beforeIds = await requestReport(page, reportType, startStr, endStr, send, run);
-  return await waitForReportCompletion(page, beforeIds, null, send, 300, run);
+  return await waitForReportCompletion(page, beforeIds, null, send, 300, run, reportType, startStr, endStr);
 }
 
 /**
@@ -864,7 +1064,7 @@ async function runSalesSync(page, creds, options, send = () => {}, run = null) {
   if (run?.cancelled) throw new RunCancelledError();
   const requestId = await locateOrRequestReport(page, 'Sales_F', startPortal, endPortal, options.force, send, run);
   if (run?.cancelled) throw new RunCancelledError();
-  const { filename, csvText } = await fetchReportData(page, requestId, send, run);
+  const { filename, csvText } = await fetchReportData(page, requestId, send, run, 'Sales_F');
 
   log(send, `[zepto.sales] Transforming Sales CSV (${csvText.length.toLocaleString('en-IN')} bytes)...`);
   const transformedRows = transformSalesCsv(csvText, lookups, send);
@@ -901,7 +1101,7 @@ async function runInventoryRefresh(page, creds, options, send = () => {}, run = 
 
   const requestId = await locateOrRequestReport(page, 'Vendor Inventory_F', null, null, options.force, send, run);
   if (run?.cancelled) throw new RunCancelledError();
-  const { filename, csvText } = await fetchReportData(page, requestId, send, run);
+  const { filename, csvText } = await fetchReportData(page, requestId, send, run, 'Vendor Inventory_F');
 
   if (options.dryRun) {
     log(send, `[zepto.inv] DRY RUN: Downloaded ${filename} (${csvText.length.toLocaleString('en-IN')} bytes). Skipping tab replace.`);
@@ -945,7 +1145,7 @@ async function runDownloadReport(page, creds, options, send = () => {}, run = nu
   if (run?.cancelled) throw new RunCancelledError();
   const requestId = await locateOrRequestReport(page, reportType, startPortal, endPortal, options.force, send, run);
   if (run?.cancelled) throw new RunCancelledError();
-  const { filename, csvText } = await fetchReportData(page, requestId, send, run);
+  const { filename, csvText } = await fetchReportData(page, requestId, send, run, reportType);
 
   const downloadsDir = path.join(__dirname, '..', 'downloads');
   if (!fs.existsSync(downloadsDir)) {
