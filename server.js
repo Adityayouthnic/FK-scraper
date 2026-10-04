@@ -34,15 +34,43 @@ const { testSmtpConnection } = require('./src/zeptoNotify');
 const { getSheetsClient, getAuthIdentity } = require('./src/googleAuth');
 
 const app = express();
+app.set('trust proxy', 1);
 app.use(express.json());
 app.use(cookieParser());
 
-// Security Headers (Defense-in-depth)
+// Security Headers & Defense-in-depth
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'SAMEORIGIN');
   res.setHeader('X-XSS-Protection', '1; mode=block');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=()');
+  if (req.secure || req.headers['x-forwarded-proto'] === 'https') {
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  }
+  res.setHeader(
+    'Content-Security-Policy',
+    "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' wss: ws: https:; frame-ancestors 'self';"
+  );
+  next();
+});
+
+// Origin / CSRF Defense for mutating API endpoints
+app.use('/api', (req, res, next) => {
+  if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(req.method)) {
+    const origin = req.headers.origin;
+    const host = req.headers.host;
+    if (origin && host) {
+      try {
+        const originHost = new URL(origin).host;
+        if (originHost !== host) {
+          return res.status(403).json({ error: 'Cross-origin API request forbidden.' });
+        }
+      } catch {
+        return res.status(403).json({ error: 'Malformed origin header.' });
+      }
+    }
+  }
   next();
 });
 
@@ -54,14 +82,18 @@ app.get('/login', (req, res) => {
   }
   const token = req.cookies?.fk_session;
   if (token && verifySession(token)) {
-    return res.redirect('/');
+    const rawRedirect = req.query.redirect || '/';
+    const safeRedirect = (typeof rawRedirect === 'string' && rawRedirect.startsWith('/') && !rawRedirect.startsWith('//') && !rawRedirect.includes('\\'))
+      ? rawRedirect
+      : '/';
+    return res.redirect(safeRedirect);
   }
   res.sendFile(path.join(__dirname, 'public', 'login.html'));
 });
 
 app.post('/api/auth/login', (req, res) => {
   const { username, password } = req.body || {};
-  const clientIp = req.headers['x-forwarded-for']?.split(',')[0].trim() || req.socket.remoteAddress || 'unknown';
+  const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
   const result = authenticate(username, password, clientIp);
 
   if (!result.success) {
@@ -69,10 +101,12 @@ app.post('/api/auth/login', (req, res) => {
     return res.status(statusCode).json(result);
   }
 
+  const isSecure = process.env.NODE_ENV === 'production' || req.secure || req.headers['x-forwarded-proto'] === 'https';
+
   res.cookie('fk_session', result.token, {
     httpOnly: true,
     sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production' || req.secure,
+    secure: isSecure,
     maxAge: SESSION_DURATION_MS,
     path: '/',
   });
@@ -83,7 +117,13 @@ app.post('/api/auth/login', (req, res) => {
 app.post('/api/auth/logout', (req, res) => {
   const token = req.cookies?.fk_session;
   if (token) destroySession(token);
-  res.clearCookie('fk_session', { path: '/' });
+  const isSecure = process.env.NODE_ENV === 'production' || req.secure || req.headers['x-forwarded-proto'] === 'https';
+  res.clearCookie('fk_session', {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: isSecure,
+    path: '/',
+  });
   res.json({ success: true });
 });
 
@@ -152,10 +192,18 @@ app.post('/api/settings/test-webhook', requireAuth, requireAdmin, async (req, re
   if (!webhookUrl) return res.status(400).json({ error: 'Webhook URL is required.' });
 
   try {
-    const result = await sendAlert('Test Notification', 'Webhook alerts are configured and functional from FK-Scraper!', {
-      url: req.protocol + '://' + req.get('host'),
-      time: new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' }),
-    });
+    const result = await sendAlert(
+      'Test Notification',
+      'Webhook alerts are configured and functional from FK-Scraper!',
+      {
+        url: req.protocol + '://' + req.get('host'),
+        time: new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' }),
+      },
+      webhookUrl
+    );
+    if (result && !result.success) {
+      return res.status(400).json(result);
+    }
     res.json(result || { success: true });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -528,3 +576,12 @@ process.on('SIGINT', async () => {
   await closeLiveSession();
   process.exit(0);
 });
+
+process.on('unhandledRejection', (reason) => {
+  console.error('[server] Unhandled Promise Rejection:', reason);
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('[server] Uncaught Exception:', err);
+});
+

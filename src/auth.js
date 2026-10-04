@@ -62,14 +62,30 @@ loadSessions();
 
 /**
  * Checks whether dashboard authentication is strictly required.
- * Defaults to false (direct dashboard access) unless AUTH_REQUIRED=true.
+ * Defaults to true (login required) unless explicitly set to AUTH_REQUIRED=false.
  */
 function isAuthRequired() {
-  return process.env.AUTH_REQUIRED === 'true';
+  return process.env.AUTH_REQUIRED !== 'false';
 }
 
 // Rate limiting: ip -> { count, firstAttempt, lockedUntil }
 const loginAttempts = new Map();
+const MAX_RATE_LIMIT_ENTRIES = 5000;
+
+function cleanupLoginAttempts() {
+  const now = Date.now();
+  for (const [ip, record] of loginAttempts.entries()) {
+    if (record.lockedUntil && record.lockedUntil <= now) {
+      loginAttempts.delete(ip);
+    } else if (!record.lockedUntil && now - record.firstAttempt > 60 * 1000) {
+      loginAttempts.delete(ip);
+    }
+  }
+}
+
+// Dummy credentials for constant-time evaluation against username enumeration
+const DUMMY_SALT = crypto.randomBytes(16).toString('hex');
+const DUMMY_HASH = crypto.scryptSync('dummy-password-evaluation-seed', DUMMY_SALT, 64).toString('hex');
 
 function hashPassword(password) {
   const salt = crypto.randomBytes(16).toString('hex');
@@ -94,33 +110,49 @@ function verifyPassword(password, storedHash, storedSalt) {
  * Load or initialize users from data/users.json.
  */
 function loadUsers() {
+  const defaultUsername = (process.env.ADMIN_USERNAME || 'admin').trim().toLowerCase();
+  const defaultPassword = process.env.ADMIN_PASSWORD || process.env.ACCESS_TOKEN || 'Admin@FK2026';
+
+  let users = [];
   try {
     if (fs.existsSync(USERS_FILE)) {
       const data = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
-      if (Array.isArray(data) && data.length > 0) return data;
+      if (Array.isArray(data) && data.length > 0) {
+        users = data;
+      }
     }
   } catch (err) {
     console.error('[auth] Failed to read users.json:', err.message);
   }
 
-  // Seed default admin
-  const defaultUsername = process.env.ADMIN_USERNAME || 'admin';
-  const defaultPassword = process.env.ADMIN_PASSWORD || process.env.ACCESS_TOKEN || 'Admin@FK2026';
-  const { salt, hash } = hashPassword(defaultPassword);
+  // Ensure default admin exists
+  let admin = users.find((u) => u.username.toLowerCase() === defaultUsername);
+  if (!admin) {
+    const { salt, hash } = hashPassword(defaultPassword);
+    admin = {
+      username: defaultUsername,
+      name: 'Administrator',
+      role: 'admin',
+      salt,
+      hash,
+      createdAt: new Date().toISOString(),
+      lastLogin: null,
+    };
+    users.unshift(admin);
+    saveUsers(users);
+    console.log(`[auth] Admin account seeded: username='${defaultUsername}'`);
+  } else if (process.env.ADMIN_PASSWORD) {
+    // If ADMIN_PASSWORD is set in environment, ensure hash matches
+    if (!verifyPassword(process.env.ADMIN_PASSWORD, admin.hash, admin.salt)) {
+      const { salt, hash } = hashPassword(process.env.ADMIN_PASSWORD);
+      admin.salt = salt;
+      admin.hash = hash;
+      saveUsers(users);
+      console.log(`[auth] Admin password synced to ADMIN_PASSWORD environment variable.`);
+    }
+  }
 
-  const defaultAdmin = {
-    username: defaultUsername,
-    name: 'Administrator',
-    role: 'admin',
-    salt,
-    hash,
-    createdAt: new Date().toISOString(),
-    lastLogin: null,
-  };
-
-  saveUsers([defaultAdmin]);
-  console.log(`[auth] Default admin account seeded: username='${defaultUsername}'`);
-  return [defaultAdmin];
+  return users;
 }
 
 function saveUsers(users) {
@@ -167,6 +199,15 @@ function recordLoginAttempt(ip, success) {
     return;
   }
 
+  if (loginAttempts.size > MAX_RATE_LIMIT_ENTRIES) {
+    cleanupLoginAttempts();
+    if (loginAttempts.size > MAX_RATE_LIMIT_ENTRIES) {
+      // Evict oldest entry
+      const oldestKey = loginAttempts.keys().next().value;
+      if (oldestKey) loginAttempts.delete(oldestKey);
+    }
+  }
+
   const record = loginAttempts.get(ip) || { count: 0, firstAttempt: now, lockedUntil: null };
   record.count += 1;
 
@@ -179,7 +220,7 @@ function recordLoginAttempt(ip, success) {
 }
 
 /**
- * Authenticate credentials.
+ * Authenticate credentials with timing-safe evaluation.
  */
 function authenticate(username, password, ip = 'unknown') {
   const rateLimit = checkRateLimit(ip);
@@ -190,7 +231,12 @@ function authenticate(username, password, ip = 'unknown') {
   const normalized = String(username || '').trim().toLowerCase();
   const user = usersCache.find((u) => u.username.toLowerCase() === normalized);
 
-  if (!user || !verifyPassword(password, user.hash, user.salt)) {
+  // Timing-safe: always execute scrypt verify even if user does not exist
+  const isValid = user
+    ? verifyPassword(password, user.hash, user.salt)
+    : (verifyPassword(password, DUMMY_HASH, DUMMY_SALT) && false);
+
+  if (!isValid || !user) {
     recordLoginAttempt(ip, false);
     return { success: false, error: 'Invalid username or password.' };
   }
@@ -386,7 +432,10 @@ function requireAuth(req, res, next) {
     return res.status(401).json({ error: 'Authentication required' });
   }
 
-  const redirectUrl = encodeURIComponent(req.originalUrl || '/');
+  const targetUrl = (typeof req.originalUrl === 'string' && req.originalUrl.startsWith('/') && !req.originalUrl.startsWith('//') && !req.originalUrl.includes('\\'))
+    ? req.originalUrl
+    : '/';
+  const redirectUrl = encodeURIComponent(targetUrl);
   return res.redirect(`/login?redirect=${redirectUrl}`);
 }
 

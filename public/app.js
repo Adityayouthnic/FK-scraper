@@ -273,6 +273,11 @@ async function checkAuth() {
     const data = await res.json();
     if (!data.authenticated) {
       window.location.href = '/login?redirect=' + encodeURIComponent(window.location.pathname);
+      return;
+    }
+    const nameEl = document.getElementById('sidebar-user-name');
+    if (nameEl && data.user) {
+      nameEl.textContent = data.user.name || data.user.username || 'Administrator';
     }
   } catch (err) {
     console.warn('Auth check failed:', err);

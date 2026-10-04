@@ -397,14 +397,24 @@ function renderLookupHealth(data) {
   if (unmappedEansCount) unmappedEansCount.textContent = (data.unmappedEans || []).length;
   if (unmappedCitiesCount) unmappedCitiesCount.textContent = (data.unmappedCities || []).length;
 
+function escapeHtml(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
   if (unmappedEansTbody) {
     if (!data.unmappedEans || data.unmappedEans.length === 0) {
       unmappedEansTbody.innerHTML = '<tr><td colspan="4" class="px-3 py-4 text-center text-slate-400 italic">No missing EANs detected.</td></tr>';
     } else {
       unmappedEansTbody.innerHTML = data.unmappedEans.map((i) => `
         <tr class="hover:bg-slate-50">
-          <td class="px-3 py-2 font-mono font-semibold text-fuchsia-700">${i.value}</td>
-          <td class="px-3 py-2">${i.count || 1} time(s)</td>
+          <td class="px-3 py-2 font-mono font-semibold text-fuchsia-700">${escapeHtml(i.value)}</td>
+          <td class="px-3 py-2">${Number(i.count) || 1} time(s)</td>
           <td class="px-3 py-2 text-slate-400 text-[10px]">${new Date(i.firstSeen).toLocaleDateString('en-IN')}</td>
           <td class="px-3 py-2 text-slate-500">Add to 'EAN OMS Mapping' (Col A)</td>
         </tr>
@@ -418,8 +428,8 @@ function renderLookupHealth(data) {
     } else {
       unmappedCitiesTbody.innerHTML = data.unmappedCities.map((i) => `
         <tr class="hover:bg-slate-50">
-          <td class="px-3 py-2 font-semibold text-slate-800">${i.value}</td>
-          <td class="px-3 py-2">${i.count || 1} time(s)</td>
+          <td class="px-3 py-2 font-semibold text-slate-800">${escapeHtml(i.value)}</td>
+          <td class="px-3 py-2">${Number(i.count) || 1} time(s)</td>
           <td class="px-3 py-2 text-slate-400 text-[10px]">${new Date(i.firstSeen).toLocaleDateString('en-IN')}</td>
           <td class="px-3 py-2 text-slate-500">Add to 'Zone Mapping' (Col A)</td>
         </tr>

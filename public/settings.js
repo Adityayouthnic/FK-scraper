@@ -124,12 +124,24 @@ async function loadUsers() {
           <td class="px-6 py-3.5 text-slate-500">${createdStr}</td>
           <td class="px-6 py-3.5 text-slate-500">${lastLoginStr}</td>
           <td class="px-6 py-3.5 text-right space-x-2">
-            <button onclick="openPwdModal('${escapeHtml(u.username)}')" class="text-brand-600 hover:text-brand-800 font-medium">Change Password</button>
-            ${!isSelf ? `<button onclick="deleteUserPrompt('${escapeHtml(u.username)}')" class="text-rose-600 hover:text-rose-800 font-medium ml-2">Delete</button>` : ''}
+            <button type="button" data-action="change-pwd" data-username="${escapeHtml(u.username)}" class="text-brand-600 hover:text-brand-800 font-medium">Change Password</button>
+            ${!isSelf ? `<button type="button" data-action="delete-user" data-username="${escapeHtml(u.username)}" class="text-rose-600 hover:text-rose-800 font-medium ml-2">Delete</button>` : ''}
           </td>
         </tr>
       `;
     }).join('');
+
+    if (!tbody.dataset.listenerBound) {
+      tbody.dataset.listenerBound = 'true';
+      tbody.addEventListener('click', (e) => {
+        const btn = e.target.closest('button[data-action]');
+        if (!btn) return;
+        const action = btn.dataset.action;
+        const targetUser = btn.dataset.username;
+        if (action === 'change-pwd') openPwdModal(targetUser);
+        else if (action === 'delete-user') deleteUserPrompt(targetUser);
+      });
+    }
   } catch (err) {
     console.error('Failed to load users:', err);
   }

@@ -238,21 +238,21 @@ function updateScheduleConfig({ enabled, walletTime, trendsTime, zeptoTime, wall
   if (walletTime) {
     const cronStr = timeToCron(walletTime, '*');
     if (cronStr) settings.WALLET_CRON_SCHEDULE = cronStr;
-  } else if (walletSchedule) {
+  } else if (walletSchedule && cron.validate(walletSchedule)) {
     settings.WALLET_CRON_SCHEDULE = walletSchedule;
   }
 
   if (trendsTime) {
     const cronStr = timeToCron(trendsTime, '1'); // 1 = Monday
     if (cronStr) settings.TRENDS_CRON_SCHEDULE = cronStr;
-  } else if (trendsSchedule) {
+  } else if (trendsSchedule && cron.validate(trendsSchedule)) {
     settings.TRENDS_CRON_SCHEDULE = trendsSchedule;
   }
 
   if (zeptoTime) {
     const cronStr = timeToCron(zeptoTime, '*');
     if (cronStr) settings.ZEPTO_CRON_SCHEDULE = cronStr;
-  } else if (zeptoSchedule) {
+  } else if (zeptoSchedule && cron.validate(zeptoSchedule)) {
     settings.ZEPTO_CRON_SCHEDULE = zeptoSchedule;
   }
 

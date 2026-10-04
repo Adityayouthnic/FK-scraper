@@ -61,10 +61,19 @@
         </div>
       </form>
 
+      <!-- Default Credentials Hint -->
+      <div class="mt-4 p-3 rounded-xl bg-slate-50 border border-slate-200/80 text-center">
+        <p class="text-[11px] text-slate-500 font-medium">Default System Login</p>
+        <div class="mt-1 flex items-center justify-center gap-2 text-xs font-mono">
+          <span class="px-2 py-0.5 rounded bg-white border border-slate-200 text-slate-700">user: <strong class="text-slate-900">admin</strong></span>
+          <span class="px-2 py-0.5 rounded bg-white border border-slate-200 text-slate-700">pwd: <strong class="text-slate-900">Admin@FK2026</strong></span>
+        </div>
+      </div>
+
       <!-- Security Notice -->
       <div class="mt-6 pt-5 border-t border-slate-100 text-center">
         <p class="text-[11px] text-slate-400">
-          Protected by HTTPS &amp; Brute-Force Rate Limiting &middot; FK-Scraper v1.0
+          Protected by HTTPS, Scrypt &amp; Brute-Force Rate Limiting &middot; FK-Scraper v1.0
         </p>
       </div>
     </div>
@@ -109,7 +118,10 @@
         submitBtn.classList.add('bg-emerald-600');
 
         const params = new URLSearchParams(window.location.search);
-        const redirectUrl = params.get('redirect') || '/';
+        let redirectUrl = params.get('redirect') || '/';
+        if (!redirectUrl.startsWith('/') || redirectUrl.startsWith('//') || redirectUrl.includes('\\')) {
+          redirectUrl = '/';
+        }
         window.location.href = redirectUrl;
       } catch (err) {
         errorMessage.textContent = err.message;

@@ -8,9 +8,47 @@
  */
 const { settings } = require('./config');
 
-async function sendAlert(title, message, extra = {}) {
-  const webhookUrl = settings.ALERT_WEBHOOK_URL;
+function isSafeWebhookUrl(urlStr) {
+  if (!urlStr || typeof urlStr !== 'string') return false;
+  try {
+    const parsed = new URL(urlStr);
+    if (!['http:', 'https:'].includes(parsed.protocol)) return false;
+    const hostname = parsed.hostname.toLowerCase();
+    if (
+      hostname === 'localhost' ||
+      hostname.endsWith('.localhost') ||
+      hostname === '127.0.0.1' ||
+      hostname === '0.0.0.0' ||
+      hostname === '::1' ||
+      hostname === '169.254.169.254' ||
+      hostname.startsWith('10.') ||
+      hostname.startsWith('192.168.') ||
+      hostname.startsWith('172.16.') ||
+      hostname.startsWith('172.17.') ||
+      hostname.startsWith('172.18.') ||
+      hostname.startsWith('172.19.') ||
+      hostname.startsWith('172.2') ||
+      hostname.startsWith('172.30.') ||
+      hostname.startsWith('172.31.') ||
+      hostname.endsWith('.internal') ||
+      hostname.endsWith('.local')
+    ) {
+      return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function sendAlert(title, message, extra = {}, targetUrl = null) {
+  const webhookUrl = targetUrl || settings.ALERT_WEBHOOK_URL;
   if (!webhookUrl) return;
+
+  if (!isSafeWebhookUrl(webhookUrl)) {
+    console.warn(`[alert] Blocked unsafe or internal webhook URL: ${webhookUrl}`);
+    return { success: false, error: 'Target webhook URL is invalid or restricted.' };
+  }
 
   const text = `**[FK Scraper] ${title}**\n${message}` +
     (extra.url ? `\n🔗 ${extra.url}` : '') +
@@ -35,4 +73,4 @@ async function sendAlert(title, message, extra = {}) {
   }
 }
 
-module.exports = { sendAlert };
+module.exports = { sendAlert, isSafeWebhookUrl };
