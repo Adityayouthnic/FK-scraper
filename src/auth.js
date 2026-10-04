@@ -14,12 +14,59 @@ const path = require('path');
 const crypto = require('crypto');
 
 const USERS_FILE = path.join(__dirname, '..', 'data', 'users.json');
+const SESSIONS_FILE = path.join(__dirname, '..', 'data', 'sessions.json');
 const SESSION_DURATION_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 const MAX_LOGIN_ATTEMPTS = 5;
 const LOCKOUT_DURATION_MS = 5 * 60 * 1000; // 5 minutes
 
 // In-memory active sessions: token -> { user, expiresAt, createdAt }
 const activeSessions = new Map();
+
+function loadSessions() {
+  try {
+    if (fs.existsSync(SESSIONS_FILE)) {
+      const data = JSON.parse(fs.readFileSync(SESSIONS_FILE, 'utf8'));
+      if (typeof data === 'object' && data !== null) {
+        const now = Date.now();
+        for (const [token, session] of Object.entries(data)) {
+          if (session && session.expiresAt > now) {
+            activeSessions.set(token, session);
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[auth] Note reading sessions.json:', err.message);
+  }
+}
+
+function saveSessions() {
+  try {
+    const dir = path.dirname(SESSIONS_FILE);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    const obj = {};
+    const now = Date.now();
+    for (const [token, session] of activeSessions.entries()) {
+      if (session && session.expiresAt > now) {
+        obj[token] = session;
+      }
+    }
+    fs.writeFileSync(SESSIONS_FILE, JSON.stringify(obj, null, 2), 'utf8');
+  } catch (err) {
+    console.warn('[auth] Note saving sessions.json:', err.message);
+  }
+}
+
+// Hydrate existing sessions on startup
+loadSessions();
+
+/**
+ * Checks whether dashboard authentication is strictly required.
+ * Defaults to false (direct dashboard access) unless AUTH_REQUIRED=true.
+ */
+function isAuthRequired() {
+  return process.env.AUTH_REQUIRED === 'true';
+}
 
 // Rate limiting: ip -> { count, firstAttempt, lockedUntil }
 const loginAttempts = new Map();
@@ -167,6 +214,7 @@ function authenticate(username, password, ip = 'unknown') {
   };
 
   activeSessions.set(sessionToken, sessionData);
+  saveSessions();
   return { success: true, token: sessionToken, user: sessionData.user };
 }
 
@@ -180,6 +228,7 @@ function verifySession(token) {
 
   if (Date.now() > session.expiresAt) {
     activeSessions.delete(token);
+    saveSessions();
     return null;
   }
 
@@ -190,7 +239,10 @@ function verifySession(token) {
  * Terminate a session.
  */
 function destroySession(token) {
-  if (token) activeSessions.delete(token);
+  if (token) {
+    activeSessions.delete(token);
+    saveSessions();
+  }
 }
 
 /**
@@ -297,8 +349,14 @@ function deleteUser(username, requestingUsername) {
 
 /**
  * Express Middleware to require authentication.
+ * Bypasses authentication and auto-attaches admin user when AUTH_REQUIRED !== 'true'.
  */
 function requireAuth(req, res, next) {
+  if (!isAuthRequired()) {
+    req.user = { username: 'admin', name: 'Administrator', role: 'admin' };
+    return next();
+  }
+
   const token = req.cookies?.fk_session || (req.headers.authorization?.startsWith('Bearer ') ? req.headers.authorization.slice(7) : null);
 
   if (token) {
@@ -336,6 +394,11 @@ function requireAuth(req, res, next) {
  * Express Middleware to require admin privileges.
  */
 function requireAdmin(req, res, next) {
+  if (!isAuthRequired()) {
+    req.user = req.user || { username: 'admin', name: 'Administrator', role: 'admin' };
+    return next();
+  }
+
   if (!req.user || req.user.role !== 'admin') {
     return res.status(403).json({ error: 'Administrator privileges required.' });
   }
@@ -352,5 +415,6 @@ module.exports = {
   deleteUser,
   requireAuth,
   requireAdmin,
+  isAuthRequired,
   SESSION_DURATION_MS,
 };

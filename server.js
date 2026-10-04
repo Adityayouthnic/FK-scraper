@@ -24,6 +24,7 @@ const {
   deleteUser,
   requireAuth,
   requireAdmin,
+  isAuthRequired,
   SESSION_DURATION_MS,
 } = require('./src/auth');
 const { getSafeCredentials, updateCredentials, getRawZeptoCredentials } = require('./src/credentials');
@@ -48,6 +49,9 @@ app.use((req, res, next) => {
 // --- Public Authentication Routes ---
 
 app.get('/login', (req, res) => {
+  if (!isAuthRequired()) {
+    return res.redirect('/');
+  }
   const token = req.cookies?.fk_session;
   if (token && verifySession(token)) {
     return res.redirect('/');
@@ -84,12 +88,19 @@ app.post('/api/auth/logout', (req, res) => {
 });
 
 app.get('/api/auth/me', (req, res) => {
+  if (!isAuthRequired()) {
+    return res.json({
+      authenticated: true,
+      authRequired: false,
+      user: { username: 'admin', name: 'Administrator', role: 'admin' },
+    });
+  }
   const token = req.cookies?.fk_session;
   const user = verifySession(token);
   if (!user) {
-    return res.json({ authenticated: false });
+    return res.json({ authenticated: false, authRequired: true });
   }
-  res.json({ authenticated: true, user });
+  res.json({ authenticated: true, authRequired: true, user });
 });
 
 // --- Protected Dashboard Views ---
