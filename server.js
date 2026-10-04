@@ -279,6 +279,10 @@ app.delete('/api/users/:username', requireAuth, requireAdmin, (req, res) => {
 // --- Programmatic Trigger Middleware (Session or Bearer ACCESS_TOKEN) ---
 
 function verifyRunnerAuth(req, res, next) {
+  if (!isAuthRequired()) {
+    return next();
+  }
+
   // 1. Session Cookie Auth
   const sessionToken = req.cookies?.fk_session;
   if (sessionToken && verifySession(sessionToken)) {
@@ -380,6 +384,10 @@ wss.on('connection', (ws, req) => {
   const cookies = parseCookies(req.headers.cookie);
   const sessionToken = cookies.fk_session;
   let authenticatedUser = verifySession(sessionToken);
+
+  if (!isAuthRequired()) {
+    authenticatedUser = authenticatedUser || { username: 'admin', role: 'admin' };
+  }
 
   if (!authenticatedUser) {
     // Check URL query token e.g. /ws?token=...

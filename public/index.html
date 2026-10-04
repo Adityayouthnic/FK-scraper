@@ -7,32 +7,10 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
-  <!-- Tailwind CSS CDN -->
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script>
-    tailwind.config = {
-      theme: {
-        extend: {
-          colors: {
-            brand: {
-              50: '#eef2ff',
-              100: '#e0e7ff',
-              200: '#c7d2fe',
-              500: '#6366f1',
-              600: '#4f46e5',
-              700: '#4338ca',
-              800: '#3730a3',
-              900: '#312e81',
-            }
-          },
-          fontFamily: {
-            sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
-            mono: ['"JetBrains Mono"', 'monospace'],
-          }
-        }
-      }
-    };
-  </script>
+  <!-- Local Tailwind CSS Bundle (Never fails) -->
+  <link rel="stylesheet" href="/tailwind.min.css" />
+  <!-- Optional Tailwind Play CDN with graceful fallback -->
+  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4" async></script>
   <link rel="stylesheet" href="/styles.css" />
 </head>
 <body class="h-full flex overflow-hidden text-slate-800 antialiased font-sans">
