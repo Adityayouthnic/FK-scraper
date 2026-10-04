@@ -532,6 +532,8 @@ async function autoLogin(page, creds, send = () => {}, run = null) {
 
     if (await isLoggedIn(page)) {
       log(send, '[zepto.auth] OTP accepted — successfully authenticated to Zepto!');
+      // Allow 3 seconds for session tokens, JWT, and cookies to fully settle in browser storage
+      await page.waitForTimeout(3000);
       await saveZeptoSession(page.context(), page, send);
       return;
     }
@@ -552,6 +554,7 @@ async function autoLogin(page, creds, send = () => {}, run = null) {
 
 /**
  * Opens or focuses the reports page and waits for its data grid to be fully populated.
+ * Uses fast client-side navigation via sidebar to avoid heavy dashboard reloading.
  */
 async function openReports(page, send = () => {}, run = null) {
   if (run?.cancelled) throw new RunCancelledError();
@@ -559,18 +562,48 @@ async function openReports(page, send = () => {}, run = null) {
 
   if (currentUrl.includes('/vendor/reports')) {
     log(send, '[zepto.rep] Already on Reports view.');
+    const rows = await getTableRows(page);
+    if (rows.length > 0) return true;
   } else {
-    log(send, `[zepto.rep] Opening Reports portal (${REPORTS_URL})...`);
-    await page.goto(REPORTS_URL, { waitUntil: 'domcontentloaded' });
+    // If sidebar menu is visible (e.g. on dashboard), use instant client-side routing
+    let clickedNav = false;
+    try {
+      const reportsNav = page.locator("a[href*='/vendor/reports'], a[href*='/reports'], nav :text-is('Reports'), [role='menuitem']:has-text('Reports'), button:has-text('Reports')").first();
+      if (await reportsNav.isVisible({ timeout: 1500 }).catch(() => false)) {
+        log(send, '[zepto.rep] Navigating to Reports via sidebar menu (bypassing dashboard load)...');
+        await reportsNav.click();
+        await page.waitForTimeout(1000);
+        clickedNav = true;
+      }
+    } catch {}
+
+    if (!clickedNav || !page.url().includes('/vendor/reports')) {
+      log(send, `[zepto.rep] Opening Reports portal (${REPORTS_URL})...`);
+      await page.goto(REPORTS_URL, { waitUntil: 'domcontentloaded' });
+    }
   }
 
   // Wait for the reports page components and server-rendered data rows to stabilize
   for (let i = 0; i < 25; i++) {
     if (run?.cancelled) throw new RunCancelledError();
 
-    if (page.url().includes('/login')) {
+    const url = page.url();
+    if (url.includes('/login')) {
       log(send, '[zepto.rep] Session expired or unauthenticated — redirected to login.');
       return false;
+    }
+
+    // If redirected to /vendor/zepto-reactor or stuck on dashboard, click Reports in sidebar
+    if (url.includes('/vendor/zepto-reactor') || url.includes('/reactor') || (!url.includes('/vendor/reports') && url.includes('/vendor'))) {
+      try {
+        const reportsNav = page.locator("a[href*='/vendor/reports'], a[href*='/reports'], [role='menuitem']:has-text('Reports'), nav :text-is('Reports')").first();
+        if (await reportsNav.isVisible({ timeout: 800 }).catch(() => false)) {
+          log(send, '[zepto.rep] Switched from dashboard to Reports view via sidebar...');
+          await reportsNav.click();
+          await page.waitForTimeout(1200);
+          continue;
+        }
+      } catch {}
     }
 
     const bodyText = (await page.innerText('body').catch(() => '')).toLowerCase();
@@ -581,6 +614,11 @@ async function openReports(page, send = () => {}, run = null) {
 
     const tableRows = await getTableRows(page);
     if (tableRows.length > 0) {
+      return true;
+    }
+
+    const hasReqBtn = await page.locator("button:has-text('Request Report'), [role='button']:has-text('Request Report')").count().catch(() => 0);
+    if (hasReqBtn > 0 && page.url().includes('/vendor/reports')) {
       return true;
     }
 
@@ -635,17 +673,26 @@ async function ensureSession(page, creds, send = () => {}, run = null) {
 
   if (run?.cancelled) throw new RunCancelledError();
   await saveZeptoSession(page.context(), page, send);
-  await openReports(page, send, run);
+  const repReady = await openReports(page, send, run);
+  if (!repReady && page.url().includes('/login')) {
+    log(send, '[zepto.auth] Warning: Portal returned to login after auth. Retrying navigation...');
+    await page.waitForTimeout(2000);
+    await openReports(page, send, run);
+  }
 }
 
 /**
- * Waits for the reports table to have at least one valid row rendered.
+ * Waits for the reports table to have at least one valid row rendered or ready state.
  */
 async function waitForTableReady(page, timeoutMs = 12000) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const rows = await getTableRows(page);
     if (rows && rows.length > 0) {
+      return true;
+    }
+    const hasBtn = await page.locator("button:has-text('Request Report'), [role='button']:has-text('Request Report')").count().catch(() => 0);
+    if (hasBtn > 0 && page.url().includes('/vendor/reports')) {
       return true;
     }
     await page.waitForTimeout(400);
@@ -1644,6 +1691,36 @@ async function runZeptoJob(send, options = {}) {
     page = context.pages().length > 0 ? context.pages()[0] : await context.newPage();
     run.page = page;
     setActivePage(page);
+
+    // Speed up Zepto portal loading by aborting non-essential telemetry trackers and media
+    await page.route('**/*', (route) => {
+      const req = route.request();
+      const url = req.url().toLowerCase();
+      const resourceType = req.resourceType();
+
+      // Block slow external analytics and telemetry trackers
+      if (
+        url.includes('google-analytics.com') ||
+        url.includes('googletagmanager.com') ||
+        url.includes('sentry.io') ||
+        url.includes('mixpanel.com') ||
+        url.includes('datadog') ||
+        url.includes('clarity.ms') ||
+        url.includes('hotjar.com') ||
+        url.includes('intercom.io') ||
+        url.includes('fullstory.com') ||
+        url.includes('segment.io')
+      ) {
+        return route.abort().catch(() => {});
+      }
+
+      // Block heavy media streams
+      if (resourceType === 'media') {
+        return route.abort().catch(() => {});
+      }
+
+      return route.continue().catch(() => {});
+    });
 
     if (run.cancelled) throw new RunCancelledError();
 
