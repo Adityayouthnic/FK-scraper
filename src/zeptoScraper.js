@@ -234,6 +234,21 @@ function isDateless(reportType) {
 }
 
 /**
+ * Checks if a report type is an inventory/stock snapshot.
+ * Inventory snapshots must always be generated afresh on every run to capture real-time stock levels.
+ */
+function isInventoryReport(reportType) {
+  if (!reportType) return false;
+  const norm = normalizeText(reportType);
+  return (
+    DATELESS_TYPES.has(norm) ||
+    norm.includes('inventory') ||
+    norm.includes('vendorinventory') ||
+    norm.includes('deqinventory')
+  );
+}
+
+/**
  * Extracts and parses dates like "12 Aug 2026", "28 Sep 2026 - 28 Sep 2026", "28-09-2026"
  * handling hyphens, slashes, en-dashes, and em-dashes.
  */
@@ -778,6 +793,12 @@ async function getTableRows(page) {
  * Prioritizes already 'Completed' reports over 'In Progress' reports to avoid unnecessary generation.
  */
 async function findExistingReport(page, reportType, startStr, endStr, send = () => {}) {
+  // Inventory snapshots must always be generated afresh on every run to capture current stock
+  if (isInventoryReport(reportType)) {
+    log(send, `[zepto.rep] Inventory report '${reportType}' requires fresh snapshot generation on every run. Skipping table reuse.`);
+    return null;
+  }
+
   // Wait up to 10 seconds for table rows to be rendered by Zepto
   let rows = [];
   for (let i = 0; i < 20; i++) {
@@ -1075,20 +1096,24 @@ async function waitForReportCompletion(
     // Strategy C: Topmost row match (Zepto puts newly requested reports at row 0)
     if (!matchedRow && rows.length > 0 && reportType) {
       const topRow = rows[0];
-      const typeOk = typeMatches(topRow.type, reportType);
-      let rangeOk = false;
-      if (startStr && endStr) {
-        rangeOk = rangeMatches(topRow.range, startStr, endStr);
-      } else {
-        rangeOk = !/\d{1,2}\s+[A-Za-z]{3,}\s+\d{4}/.test(topRow.range) || isRequestedToday(topRow.requested_at);
-      }
+      const isOldId = topRow.request_id && beforeIds && beforeIds.has(topRow.request_id);
 
-      if (typeOk && rangeOk) {
-        matchedRow = topRow;
-        if (!requestId && topRow.request_id) {
-          requestId = topRow.request_id;
+      if (!isOldId) {
+        const typeOk = typeMatches(topRow.type, reportType);
+        let rangeOk = false;
+        if (startStr && endStr) {
+          rangeOk = rangeMatches(topRow.range, startStr, endStr);
+        } else {
+          rangeOk = !/\d{1,2}\s+[A-Za-z]{3,}\s+\d{4}/.test(topRow.range) || isRequestedToday(topRow.requested_at);
         }
-        log(send, `[zepto.rep] Topmost table row matches requested report '${reportType}': ${requestId || '(row 0)'}`);
+
+        if (typeOk && rangeOk) {
+          matchedRow = topRow;
+          if (!requestId && topRow.request_id) {
+            requestId = topRow.request_id;
+          }
+          log(send, `[zepto.rep] Topmost table row matches newly requested report '${reportType}': ${requestId || '(row 0)'}`);
+        }
       }
     }
 
@@ -1097,6 +1122,8 @@ async function waitForReportCompletion(
       for (const r of rows) {
         if (!typeMatches(r.type, reportType)) continue;
         if (r.status.includes('Failed')) continue;
+        // Never match a row that was already present in the table before our request
+        if (r.request_id && beforeIds && beforeIds.has(r.request_id)) continue;
 
         let rangeOk = false;
         if (startStr && endStr) {
@@ -1110,7 +1137,7 @@ async function waitForReportCompletion(
           if (!requestId && r.request_id) {
             requestId = r.request_id;
           }
-          log(send, `[zepto.rep] Found matching report row in table: ${requestId || r.type}`);
+          log(send, `[zepto.rep] Found newly requested report row in table: ${requestId || r.type}`);
           break;
         }
       }
@@ -1160,10 +1187,14 @@ async function fetchReportData(page, requestId, send = () => {}, run = null, rep
 
   // Try matching by requestId prefix if available
   if (cleanId && cleanId !== 'top_row') {
-    const shortId = cleanId.slice(0, 16);
-    const candidate = page.locator('table tbody tr').filter({ hasText: shortId }).first();
+    const candidate = page.locator('table tbody tr').filter({ hasText: cleanId.slice(0, 16) }).first();
     if (await candidate.count().then((c) => c > 0).catch(() => false)) {
       rowLocator = candidate;
+    } else if (cleanId.length >= 8) {
+      const candidate8 = page.locator('table tbody tr').filter({ hasText: cleanId.slice(0, 8) }).first();
+      if (await candidate8.count().then((c) => c > 0).catch(() => false)) {
+        rowLocator = candidate8;
+      }
     }
   }
 
@@ -1317,8 +1348,14 @@ async function fetchReportData(page, requestId, send = () => {}, run = null, rep
  */
 async function locateOrRequestReport(page, reportType, startStr = null, endStr = null, force = false, send = () => {}, run = null) {
   const span = startStr && endStr ? `${startStr} -> ${endStr}` : 'today';
+  const isInv = isInventoryReport(reportType);
+  const shouldForce = force || isInv;
 
-  if (!force) {
+  if (isInv) {
+    log(send, `[zepto.rep] Inventory report '${reportType}' detected: requesting fresh live snapshot on this run.`);
+  }
+
+  if (!shouldForce) {
     if (run?.cancelled) throw new RunCancelledError();
     await openReports(page, send, run);
     await waitForTableReady(page, 10000);
@@ -1436,7 +1473,8 @@ async function runInventoryRefresh(page, creds, options, send = () => {}, run = 
   await ensureSession(page, creds, send, run);
   if (run?.cancelled) throw new RunCancelledError();
 
-  const requestId = await locateOrRequestReport(page, 'Vendor Inventory_F', null, null, options.force, send, run);
+  // Always generate a fresh inventory snapshot report every time
+  const requestId = await locateOrRequestReport(page, 'Vendor Inventory_F', null, null, true, send, run);
   if (run?.cancelled) throw new RunCancelledError();
   const { filename, csvText } = await fetchReportData(page, requestId, send, run, 'Vendor Inventory_F', null, null);
 

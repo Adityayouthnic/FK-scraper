@@ -289,6 +289,7 @@ runBtn.addEventListener('click', () => {
     const dryRun = document.getElementById('inv-dryrun')?.checked;
     if (date) options.date = date;
     if (dryRun) options.dryRun = true;
+    options.force = true; // Always generate fresh inventory report
   } else if (currentAction === 'download') {
     options.reportType = document.getElementById('report-type')?.value;
     const from = document.getElementById('rep-from')?.value?.trim();
