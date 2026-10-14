@@ -33,6 +33,23 @@ async function launchBrowser(send, { headless, storageState, useStealth = true }
       '--no-first-run',
       '--no-sandbox',
       '--disable-dev-shm-usage',
+      // Low-memory container optimizations (prevents 512Mi OOM killer)
+      '--disable-gpu',
+      '--disable-software-rasterizer',
+      '--disable-extensions',
+      '--disable-component-extensions-with-background-pages',
+      '--disable-background-networking',
+      '--disable-background-timer-throttling',
+      '--disable-backgrounding-occluded-windows',
+      '--disable-renderer-backgrounding',
+      '--disable-ipc-flooding-protection',
+      '--disable-breakpad',
+      '--disable-component-update',
+      '--disable-domain-reliability',
+      '--disable-sync',
+      '--mute-audio',
+      '--renderer-process-limit=1',
+      '--js-flags=--max-old-space-size=180',
     ],
   };
   if (settings.BROWSER_CHANNEL) {
@@ -58,7 +75,13 @@ async function launchBrowser(send, { headless, storageState, useStealth = true }
   context.setDefaultTimeout(settings.ELEMENT_TIMEOUT_MS);
   context.setDefaultNavigationTimeout(settings.PAGE_LOAD_TIMEOUT_MS);
 
-  log(send, 'browser.launch', 'Browser launched with standard browser properties + India locale');
+  // Block heavy third-party telemetry & tracking requests that cause memory bloat on Flipkart
+  await context.route(
+    /(google-analytics|googletagmanager|branch\.io|clevertap|newrelic|hotjar|mixpanel|doubleclick|clarity\.ms)/i,
+    (route) => route.abort()
+  ).catch(() => {});
+
+  log(send, 'browser.launch', 'Browser launched with low-memory profile + India locale');
   return { browser, context };
 }
 

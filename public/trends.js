@@ -23,8 +23,49 @@ let isRunning = false;
 let lastMoveSent = 0;
 let remoteViewport = { width: VIEWPORT_WIDTH, height: VIEWPORT_HEIGHT };
 
-const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-const ws = new WebSocket(`${proto}://${location.host}/ws`);
+let ws = null;
+let reconnectTimer = null;
+let reconnectAttempts = 0;
+
+function sendWs(payload) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(typeof payload === 'string' ? payload : JSON.stringify(payload));
+    return true;
+  }
+  return false;
+}
+
+function connectWs() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(`${proto}://${location.host}/ws`);
+
+  ws.addEventListener('open', () => {
+    reconnectAttempts = 0;
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+    appendLog('Connected to server. Ready to scrape Search Trends.', 'done');
+  });
+
+  ws.addEventListener('close', () => {
+    appendLog('Disconnected from server.', 'error');
+    if (isRunning) {
+      setStatus('idle');
+    }
+    if (!reconnectTimer) {
+      const delay = Math.min(1000 * Math.pow(1.5, reconnectAttempts), 5000);
+      reconnectAttempts++;
+      appendLog(`Reconnecting to server in ${(delay / 1000).toFixed(1)}s...`, 'info');
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null;
+        connectWs();
+      }, delay);
+    }
+  });
+
+  ws.addEventListener('message', onWsMessage);
+}
 
 const LOG_TAGS = { info: 'INFO', done: 'DONE', error: 'ERR' };
 
@@ -100,10 +141,7 @@ function setStatus(state) {
   pagesInput.disabled = isRunning;
 }
 
-ws.addEventListener('open', () => appendLog('Connected to server. Ready to scrape Search Trends.'));
-ws.addEventListener('close', () => appendLog('Disconnected from server.', 'error'));
-
-ws.addEventListener('message', (event) => {
+function onWsMessage(event) {
   let msg;
   try {
     msg = JSON.parse(event.data);
@@ -155,14 +193,16 @@ ws.addEventListener('message', (event) => {
       }
       break;
   }
-});
+}
+
+connectWs();
 
 runBtn.addEventListener('click', () => {
   const token = localStorage.getItem('fk_scraper_token') || '';
   if (isRunning) {
     runBtn.disabled = true;
     runBtnLabel.textContent = 'Stopping...';
-    ws.send(JSON.stringify({ type: 'cancel', token }));
+    sendWs({ type: 'cancel', token });
     appendLog('Stop requested. Halting process immediately...', 'warn');
     setTimeout(() => {
       if (isRunning) {
@@ -174,7 +214,7 @@ runBtn.addEventListener('click', () => {
   log.textContent = '';
   const selectedVertical = verticalSelect.value;
   const pages = parseInt(pagesInput.value, 10) || 10;
-  ws.send(JSON.stringify({
+  sendWs({
     type: 'run',
     job: 'trends',
     options: {
@@ -182,7 +222,7 @@ runBtn.addEventListener('click', () => {
       pages,
     },
     token,
-  }));
+  });
 });
 
 if (clearLogBtn) {
@@ -194,7 +234,7 @@ if (clearLogBtn) {
 if (resetSessionBtn) {
   resetSessionBtn.addEventListener('click', () => {
     if (confirm('Close and reset the live browser session? Next run will start a clean browser.')) {
-      ws.send(JSON.stringify({ type: 'reset_session' }));
+      sendWs({ type: 'reset_session' });
       appendLog('Live browser reset requested.', 'info');
     }
   });
@@ -202,8 +242,8 @@ if (resetSessionBtn) {
 
 // --- Relay mouse/keyboard into the remote browser via the live view ---
 function sendInput(payload) {
-  if (!isRunning || ws.readyState !== WebSocket.OPEN) return;
-  ws.send(JSON.stringify({ type: 'input', ...payload }));
+  if (!isRunning) return;
+  sendWs({ type: 'input', ...payload });
 }
 
 function toViewportCoords(e) {

@@ -68,8 +68,17 @@ tabButtons.forEach((btn) => {
 });
 
 // WebSocket Connection
-const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-const ws = new WebSocket(`${proto}://${location.host}/ws`);
+let ws = null;
+let reconnectTimer = null;
+let reconnectAttempts = 0;
+
+function sendWs(payload) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(typeof payload === 'string' ? payload : JSON.stringify(payload));
+    return true;
+  }
+  return false;
+}
 
 const LOG_TAGS = { info: 'INFO', done: 'DONE', error: 'ERR', warn: 'WARN' };
 
@@ -209,10 +218,7 @@ function setStatus(state) {
   }
 }
 
-ws.addEventListener('open', () => appendLog('Connected to server WebSocket. Zepto engine ready.'));
-ws.addEventListener('close', () => appendLog('Disconnected from server.', 'error'));
-
-ws.addEventListener('message', (event) => {
+function onWsMessage(event) {
   let msg;
   try {
     msg = JSON.parse(event.data);
@@ -253,13 +259,47 @@ ws.addEventListener('message', (event) => {
       setStatus('error');
       break;
   }
-});
+}
+
+function connectWs() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(`${proto}://${location.host}/ws`);
+
+  ws.addEventListener('open', () => {
+    reconnectAttempts = 0;
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+    appendLog('Connected to server WebSocket. Zepto engine ready.', 'done');
+  });
+
+  ws.addEventListener('close', () => {
+    appendLog('Disconnected from server.', 'error');
+    if (isRunning) {
+      setStatus('idle');
+    }
+    if (!reconnectTimer) {
+      const delay = Math.min(1000 * Math.pow(1.5, reconnectAttempts), 5000);
+      reconnectAttempts++;
+      appendLog(`Reconnecting to server in ${(delay / 1000).toFixed(1)}s...`, 'info');
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null;
+        connectWs();
+      }, delay);
+    }
+  });
+
+  ws.addEventListener('message', onWsMessage);
+}
+
+connectWs();
 
 runBtn.addEventListener('click', () => {
   if (isRunning) {
     runBtn.disabled = true;
     runBtnLabel.textContent = 'Stopping...';
-    ws.send(JSON.stringify({ type: 'cancel' }));
+    sendWs({ type: 'cancel' });
     appendLog('Stop requested. Halting process immediately...', 'warn');
     setTimeout(() => {
       if (isRunning) {
@@ -304,11 +344,11 @@ runBtn.addEventListener('click', () => {
   }
 
   appendLog(`Launching Zepto automation [${currentAction}]...`);
-  ws.send(JSON.stringify({
+  sendWs({
     type: 'run',
     job: 'zepto',
     options,
-  }));
+  });
 });
 
 if (clearLogBtn) {

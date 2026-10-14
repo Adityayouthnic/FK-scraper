@@ -168,8 +168,9 @@ async function navigateToWallet(page, send) {
   const step = 'wallet.navigate';
 
   log(send, step, `Navigating to ${settings.WALLET_URL}`);
-  await page.goto(settings.WALLET_URL, { waitUntil: 'domcontentloaded' });
-  await page.waitForLoadState('networkidle', { timeout: settings.PAGE_LOAD_TIMEOUT_MS });
+  await page.goto(settings.WALLET_URL, { waitUntil: 'domcontentloaded', timeout: settings.PAGE_LOAD_TIMEOUT_MS });
+  await page.waitForLoadState('load', { timeout: 15000 }).catch(() => {});
+  await page.waitForSelector('#app, body', { timeout: 10000 }).catch(() => {});
   await stepPause(send, step);
 
   // The seller-hub SPA sometimes bounces a fresh hash deep-link back to the
@@ -178,8 +179,9 @@ async function navigateToWallet(page, send) {
   if (!page.url().includes(WALLET_URL_MARKER)) {
     warn(send, step, `Redirected away from wallet page (current URL: ${page.url()}) — retrying navigation`);
     await page.waitForTimeout(2000);
-    await page.goto(settings.WALLET_URL, { waitUntil: 'domcontentloaded' });
-    await page.waitForLoadState('networkidle', { timeout: settings.PAGE_LOAD_TIMEOUT_MS });
+    await page.goto(settings.WALLET_URL, { waitUntil: 'domcontentloaded', timeout: settings.PAGE_LOAD_TIMEOUT_MS });
+    await page.waitForLoadState('load', { timeout: 15000 }).catch(() => {});
+    await page.waitForSelector('#app, body', { timeout: 10000 }).catch(() => {});
     await stepPause(send, step);
 
     if (!page.url().includes(WALLET_URL_MARKER)) {

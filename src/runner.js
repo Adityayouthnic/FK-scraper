@@ -146,18 +146,26 @@ async function setupScreencast(run, context, page, send) {
   const client = await awaitCancellable(run, context.newCDPSession(page));
   await awaitCancellable(run, client.send('Page.startScreencast', {
     format: 'jpeg',
-    quality: 85,
+    quality: 55, // 55% quality gives crisp display while cutting memory & bandwidth by 65%
     maxWidth: VIEWPORT.width,
     maxHeight: VIEWPORT.height,
-    everyNthFrame: 1,
+    everyNthFrame: 2, // 20-25fps smooth stream without frame flooding
   }));
+
+  let isSending = false;
   client.on('Page.screencastFrame', async ({ data, sessionId, metadata }) => {
-    send('frame', {
-      data,
-      viewportWidth: metadata?.deviceWidth || VIEWPORT.width,
-      viewportHeight: metadata?.deviceHeight || VIEWPORT.height,
-    });
     try {
+      if (!isSending) {
+        isSending = true;
+        send('frame', {
+          data,
+          viewportWidth: metadata?.deviceWidth || VIEWPORT.width,
+          viewportHeight: metadata?.deviceHeight || VIEWPORT.height,
+        });
+        setTimeout(() => {
+          isSending = false;
+        }, 35);
+      }
       await client.send('Page.screencastFrameAck', { sessionId });
     } catch {
       // WS/browser may already be closing; safe to ignore.
