@@ -4,6 +4,9 @@
  *   - Flipkart Ads Wallet (Daily)
  *   - Flipkart Search Trends (Weekly Mondays)
  *   - Zepto Daily Sales & Inventory Sync (Daily)
+ *
+ * Provides a 1-click master ON/OFF toggle across all pages,
+ * persists the preference across restarts, and supports Render sleep mode.
  */
 
 (function () {
@@ -29,6 +32,34 @@
   }
 
   let scheduleState = null;
+
+  function showToast(message, type = 'info') {
+    let toast = document.getElementById('global-schedule-toast');
+    if (!toast) {
+      toast = document.createElement('div');
+      toast.id = 'global-schedule-toast';
+      document.body.appendChild(toast);
+    }
+
+    let bg = 'bg-slate-800 text-white';
+    let icon = `<svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`;
+
+    if (type === 'success') {
+      bg = 'bg-emerald-600 text-white';
+      icon = `<svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>`;
+    } else if (type === 'error') {
+      bg = 'bg-rose-600 text-white';
+      icon = `<svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>`;
+    }
+
+    toast.className = `fixed bottom-5 right-5 z-50 flex items-center gap-2.5 px-4 py-2.5 rounded-xl shadow-xl text-xs font-semibold ${bg} transform transition-all duration-300 opacity-100 translate-y-0`;
+    toast.innerHTML = `${icon}<span>${message}</span>`;
+
+    clearTimeout(toast._timer);
+    toast._timer = setTimeout(() => {
+      toast.className = `fixed bottom-5 right-5 z-50 flex items-center gap-2.5 px-4 py-2.5 rounded-xl shadow-xl text-xs font-semibold ${bg} transform transition-all duration-300 opacity-0 translate-y-3 pointer-events-none`;
+    }, 3200);
+  }
 
   function ensureModalElement() {
     let modal = document.getElementById('schedule-modal');
@@ -57,12 +88,12 @@
             <!-- Master Enable / Disable Toggle -->
             <div class="flex items-center justify-between p-3.5 rounded-xl bg-slate-50 border border-slate-200/80">
               <div>
-                <div class="text-sm font-semibold text-slate-900">Enable Automated Runs</div>
-                <div class="text-xs text-slate-500">Background tasks run automatically on schedule with zero extra cost.</div>
+                <div class="text-sm font-semibold text-slate-900">Master Auto-Run Toggle</div>
+                <div class="text-xs text-slate-500">Toggle OFF to stop all daily crons and allow Render sleep mode.</div>
               </div>
-              <label class="relative inline-flex items-center cursor-pointer">
-                <input type="checkbox" id="sched-enabled" class="sr-only peer" checked>
-                <div class="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+              <label class="relative inline-flex items-center cursor-pointer select-none">
+                <input type="checkbox" id="sched-enabled" class="sr-only peer sched-toggle-input">
+                <div class="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
               </label>
             </div>
 
@@ -138,13 +169,16 @@
             <div id="sched-status-msg" class="text-xs text-center font-medium"></div>
           </div>
 
-          <div class="px-6 py-3.5 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-3">
-            <button id="sched-cancel-btn" type="button" class="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-800 rounded-lg hover:bg-slate-100 transition-colors">
-              Cancel
-            </button>
-            <button id="sched-save-btn" type="button" class="px-4 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 active:scale-[0.98] rounded-lg shadow-sm transition-all">
-              Save Changes
-            </button>
+          <div class="px-6 py-3.5 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
+            <span class="text-[11px] text-slate-400">Settings persist across container restarts</span>
+            <div class="flex items-center gap-3">
+              <button id="sched-cancel-btn" type="button" class="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-800 rounded-lg hover:bg-slate-100 transition-colors">
+                Cancel
+              </button>
+              <button id="sched-save-btn" type="button" class="px-4 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 active:scale-[0.98] rounded-lg shadow-sm transition-all">
+                Save Changes
+              </button>
+            </div>
           </div>
         </div>
       `;
@@ -172,29 +206,109 @@
   }
 
   function updateHeaderBadge(state) {
+    const isEnabled = Boolean(state && state.enabled);
+
+    // Synchronize all toggle checkboxes on page
+    document.querySelectorAll('.sched-toggle-input').forEach((input) => {
+      input.checked = isEnabled;
+    });
+
     const badge = document.getElementById('schedule-badge');
     const badgeText = document.getElementById('schedule-badge-text');
-    if (!badge || !badgeText) return;
+    const quickBar = document.getElementById('schedule-quick-bar');
 
-    if (!state || !state.enabled) {
-      badge.className = 'inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-500 border border-slate-200 hover:bg-slate-200 transition-colors cursor-pointer';
-      badgeText.textContent = 'Auto-Run: Paused';
+    if (quickBar) {
+      if (isEnabled) {
+        quickBar.className = 'inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs bg-emerald-50 text-emerald-800 border border-emerald-200/80 transition-all';
+      } else {
+        quickBar.className = 'inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs bg-slate-100 text-slate-600 border border-slate-200 transition-all';
+      }
+    }
+
+    if (!isEnabled) {
+      if (badge) {
+        badge.className = 'inline-flex items-center gap-1.5 font-semibold text-slate-500 hover:text-slate-800 transition-colors cursor-pointer';
+      }
+      if (badgeText) badgeText.textContent = 'Auto-Run: OFF (Paused)';
+
+      const settingsStatus = document.getElementById('settings-sched-status');
+      if (settingsStatus) {
+        settingsStatus.textContent = 'OFF (Paused / Sleep Mode)';
+        settingsStatus.className = 'font-bold text-slate-500';
+      }
       return;
     }
 
     const path = window.location.pathname;
+    let timingText = '';
+
     if (path.includes('zepto')) {
       const t = cronToTime(state.zepto?.schedule, '14:00');
-      badge.className = 'inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-fuchsia-50 text-fuchsia-700 border border-fuchsia-200/80 hover:bg-fuchsia-100 transition-colors cursor-pointer';
-      badgeText.textContent = `Auto: Daily ${formatTime12(t)} IST`;
+      timingText = `Daily ${formatTime12(t)} IST`;
+      if (badge) badge.className = 'inline-flex items-center gap-1.5 font-semibold text-fuchsia-700 hover:text-fuchsia-900 transition-colors cursor-pointer';
     } else if (path.includes('trends')) {
       const t = cronToTime(state.trends?.schedule, '08:00');
-      badge.className = 'inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200/80 hover:bg-blue-100 transition-colors cursor-pointer';
-      badgeText.textContent = `Auto: Mon ${formatTime12(t)} IST`;
+      timingText = `Mon ${formatTime12(t)} IST`;
+      if (badge) badge.className = 'inline-flex items-center gap-1.5 font-semibold text-blue-700 hover:text-blue-900 transition-colors cursor-pointer';
     } else {
       const t = cronToTime(state.wallet?.schedule, '07:00');
-      badge.className = 'inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-50 text-indigo-700 border border-indigo-200/80 hover:bg-indigo-100 transition-colors cursor-pointer';
-      badgeText.textContent = `Auto: Daily ${formatTime12(t)} IST`;
+      timingText = `Daily ${formatTime12(t)} IST`;
+      if (badge) badge.className = 'inline-flex items-center gap-1.5 font-semibold text-emerald-700 hover:text-emerald-900 transition-colors cursor-pointer';
+    }
+
+    if (badgeText) badgeText.textContent = `Auto: ${timingText}`;
+
+    const settingsStatus = document.getElementById('settings-sched-status');
+    if (settingsStatus) {
+      settingsStatus.textContent = 'Active (Daily Crons Running)';
+      settingsStatus.className = 'font-bold text-emerald-600';
+    }
+  }
+
+  async function setScheduleEnabled(enabled) {
+    const isNowEnabled = Boolean(enabled);
+
+    // Optimistically update all toggle inputs
+    document.querySelectorAll('.sched-toggle-input').forEach((input) => {
+      input.checked = isNowEnabled;
+    });
+
+    try {
+      const res = await fetch('/api/schedule', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: isNowEnabled }),
+      });
+
+      if (res.status === 401) {
+        window.location.href = '/login?redirect=' + encodeURIComponent(window.location.pathname);
+        return;
+      }
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || 'Failed to update schedule status');
+      }
+
+      const data = await res.json();
+      if (data.schedule) {
+        scheduleState = data.schedule;
+        updateHeaderBadge(scheduleState);
+      }
+
+      if (isNowEnabled) {
+        showToast('Automated daily runs ENABLED', 'success');
+      } else {
+        showToast('Automated daily runs STOPPED (Sleep Mode ready)', 'info');
+      }
+    } catch (err) {
+      console.error('[schedule] Error updating schedule:', err);
+      showToast(`Error: ${err.message}`, 'error');
+      // Revert checkboxes on failure
+      if (scheduleState) {
+        document.querySelectorAll('.sched-toggle-input').forEach((input) => {
+          input.checked = Boolean(scheduleState.enabled);
+        });
+      }
     }
   }
 
@@ -289,6 +403,8 @@
         setTimeout(() => { statusMsg.textContent = ''; }, 3000);
       }
 
+      showToast(scheduleState?.enabled ? 'Schedule timings saved' : 'Schedule saved (Auto-run paused)', 'success');
+
       setTimeout(() => {
         closeScheduleModal();
       }, 600);
@@ -297,6 +413,7 @@
         statusMsg.textContent = `Error: ${err.message}`;
         statusMsg.className = 'text-xs font-medium text-rose-600';
       }
+      showToast(`Error: ${err.message}`, 'error');
     } finally {
       if (saveBtn) {
         saveBtn.disabled = false;
@@ -314,6 +431,13 @@
 
     if (badge) badge.addEventListener('click', openScheduleModal);
     if (openBtn) openBtn.addEventListener('click', (e) => { e.preventDefault(); openScheduleModal(); });
+
+    // Handle any toggle switch with class .sched-toggle-input
+    document.addEventListener('change', (e) => {
+      if (e.target && e.target.classList.contains('sched-toggle-input')) {
+        setScheduleEnabled(e.target.checked);
+      }
+    });
 
     document.addEventListener('click', (e) => {
       if (e.target && (e.target.id === 'sched-close-btn' || e.target.closest('#sched-close-btn'))) closeScheduleModal();
@@ -335,5 +459,7 @@
     open: openScheduleModal,
     close: closeScheduleModal,
     refresh: fetchSchedule,
+    setEnabled: setScheduleEnabled,
+    showToast: showToast,
   };
 })();

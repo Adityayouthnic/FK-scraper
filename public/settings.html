@@ -152,6 +152,18 @@
       </div>
 
       <div class="flex items-center gap-4">
+        <!-- Auto-Run Quick Toggle & Schedule Pill -->
+        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs bg-slate-100 border border-slate-200 transition-all shadow-xs" id="schedule-quick-bar">
+          <label class="relative inline-flex items-center cursor-pointer select-none" title="Toggle Auto-Run On/Off">
+            <input type="checkbox" id="header-sched-toggle" class="sr-only peer sched-toggle-input">
+            <div class="w-7 h-4 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-emerald-500"></div>
+          </label>
+          <button id="schedule-badge" type="button" class="inline-flex items-center gap-1.5 font-semibold text-slate-600 hover:text-indigo-600 transition-colors cursor-pointer" title="Click to view & adjust schedule">
+            <svg class="w-3.5 h-3.5"><use href="#icon-clock"/></svg>
+            <span id="schedule-badge-text">Auto-Run: OFF (Paused)</span>
+          </button>
+        </div>
+
         <div class="flex items-center gap-2 text-xs">
           <div class="w-7 h-7 rounded-full bg-brand-50 text-brand-600 font-bold flex items-center justify-center border border-brand-200" id="user-avatar">
             A
@@ -173,6 +185,56 @@
           <span id="toast-message"></span>
           <button type="button" onclick="document.getElementById('toast-banner').classList.add('hidden')" class="text-slate-400 hover:text-slate-700 ml-4 font-bold">&times;</button>
         </div>
+
+        <!-- Section 0: Automated Daily Runs & Sleep Mode (Render Cost Optimization) -->
+        <section class="bg-white rounded-2xl border border-slate-200/90 shadow-sm overflow-hidden">
+          <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/40">
+            <div class="flex items-center gap-3">
+              <div class="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+              </div>
+              <div>
+                <h3 class="text-sm font-bold text-slate-900">Automated Daily Runs &amp; Render Sleep Mode</h3>
+                <p class="text-xs text-slate-500">Stop automated runs to allow Render web service to sleep and optimize costs</p>
+              </div>
+            </div>
+            <div class="flex items-center gap-3">
+              <span id="settings-sched-status" class="text-xs font-bold text-slate-500">OFF (Paused / Sleep Mode)</span>
+              <label class="relative inline-flex items-center cursor-pointer select-none" title="Toggle Auto-Run On/Off">
+                <input type="checkbox" id="settings-sched-toggle" class="sr-only peer sched-toggle-input">
+                <div class="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
+              </label>
+            </div>
+          </div>
+          <div class="p-6 space-y-4 text-xs text-slate-600">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div class="p-4 rounded-xl bg-slate-50 border border-slate-200/80 space-y-2">
+                <div class="font-bold text-slate-800 flex items-center gap-2">
+                  <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+                  Render Cost Optimization &amp; Sleep Mode
+                </div>
+                <p class="text-slate-500 leading-relaxed">
+                  When Auto-Run is <strong>OFF</strong>, no background cron jobs trigger unattended browser tasks. On Render's Free tier, the web service automatically spins down (goes into sleep mode) after 15 minutes of inactivity, reducing hosting costs to <strong>$0.00/month</strong>.
+                </p>
+              </div>
+              <div class="p-4 rounded-xl bg-slate-50 border border-slate-200/80 space-y-2">
+                <div class="font-bold text-slate-800 flex items-center gap-2">
+                  <span class="w-2 h-2 rounded-full bg-indigo-500"></span>
+                  Manual Run &amp; Wake-up
+                </div>
+                <p class="text-slate-500 leading-relaxed">
+                  You can wake the app anytime simply by visiting the web dashboard. You can trigger Flipkart Wallet, Search Trends, or Zepto sync on demand whenever you need them, or flip the toggle back ON when you want automated morning runs.
+                </p>
+              </div>
+            </div>
+            <div class="pt-2 flex items-center justify-between border-t border-slate-100">
+              <span class="text-slate-400 text-[11px]">Timings: Wallet (07:00 IST) &middot; Trends (Mon 08:00 IST) &middot; Zepto (14:00 IST)</span>
+              <button type="button" onclick="window.scheduleModal ? window.scheduleModal.open() : null" class="px-3.5 py-1.5 text-xs font-semibold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition-colors cursor-pointer">
+                Configure Schedule Timings &rarr;
+              </button>
+            </div>
+          </div>
+        </section>
 
         <!-- Section 1: Flipkart Seller Credentials -->
         <section class="bg-white rounded-2xl border border-slate-200/90 shadow-sm overflow-hidden">
@@ -489,6 +551,7 @@
     </div>
   </div>
 
+  <script src="/schedule-modal.js"></script>
   <script src="/settings.js"></script>
 </body>
 </html>

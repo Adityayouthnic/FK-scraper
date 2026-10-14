@@ -167,11 +167,17 @@
           <span id="status-text">Idle</span>
         </div>
 
-        <!-- Schedule Badge (Clickable) -->
-        <button id="schedule-badge" type="button" class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-50 text-indigo-700 border border-indigo-200/80 hover:bg-indigo-100 transition-colors" title="Click to view and adjust schedule">
-          <svg class="w-3.5 h-3.5"><use href="#icon-clock"/></svg>
-          <span id="schedule-badge-text">Auto: Mon 08:00 AM IST</span>
-        </button>
+        <!-- Auto-Run Quick Toggle & Schedule Pill -->
+        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs bg-slate-100 border border-slate-200 transition-all shadow-xs" id="schedule-quick-bar">
+          <label class="relative inline-flex items-center cursor-pointer select-none" title="Toggle Auto-Run On/Off">
+            <input type="checkbox" id="header-sched-toggle" class="sr-only peer sched-toggle-input">
+            <div class="w-7 h-4 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-emerald-500"></div>
+          </label>
+          <button id="schedule-badge" type="button" class="inline-flex items-center gap-1.5 font-semibold text-slate-600 hover:text-indigo-600 transition-colors cursor-pointer" title="Click to view & adjust schedule">
+            <svg class="w-3.5 h-3.5"><use href="#icon-clock"/></svg>
+            <span id="schedule-badge-text">Auto-Run: OFF (Paused)</span>
+          </button>
+        </div>
       </div>
 
       <!-- Right: Form Controls, Stats, Run Action -->

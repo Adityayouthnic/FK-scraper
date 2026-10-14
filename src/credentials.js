@@ -43,9 +43,19 @@ function loadCredentialsFile() {
     zeptoNotifyTo: fileData.zeptoNotifyTo || process.env.NOTIFY_TO || '',
     zeptoSheetId: fileData.zeptoSheetId || process.env.GSHEET_ID || '',
     zeptoHeaded: fileData.zeptoHeaded !== undefined ? fileData.zeptoHeaded : (process.env.HEADED === '1'),
+
+    // Auto-run schedule settings
+    scheduleEnabled: fileData.scheduleEnabled !== undefined ? Boolean(fileData.scheduleEnabled) : settings.ENABLE_AUTO_SCHEDULE,
+    walletSchedule: fileData.walletSchedule || settings.WALLET_CRON_SCHEDULE,
+    trendsSchedule: fileData.trendsSchedule || settings.TRENDS_CRON_SCHEDULE,
+    zeptoSchedule: fileData.zeptoSchedule || settings.ZEPTO_CRON_SCHEDULE,
   };
 
   // Sync to runtime settings
+  if (credentialsCache.scheduleEnabled !== undefined) settings.ENABLE_AUTO_SCHEDULE = credentialsCache.scheduleEnabled;
+  if (credentialsCache.walletSchedule) settings.WALLET_CRON_SCHEDULE = credentialsCache.walletSchedule;
+  if (credentialsCache.trendsSchedule) settings.TRENDS_CRON_SCHEDULE = credentialsCache.trendsSchedule;
+  if (credentialsCache.zeptoSchedule) settings.ZEPTO_CRON_SCHEDULE = credentialsCache.zeptoSchedule;
   if (credentialsCache.spreadsheetId) settings.SPREADSHEET_ID = credentialsCache.spreadsheetId;
   if (credentialsCache.trendsSpreadsheetId) settings.TRENDS_SPREADSHEET_ID = credentialsCache.trendsSpreadsheetId;
   if (credentialsCache.alertWebhookUrl) settings.ALERT_WEBHOOK_URL = credentialsCache.alertWebhookUrl;
@@ -117,6 +127,12 @@ function getSafeCredentials() {
     zeptoNotifyTo: creds.zeptoNotifyTo || '',
     zeptoSheetId: creds.zeptoSheetId || '',
     zeptoHeaded: Boolean(creds.zeptoHeaded),
+
+    // Auto-run schedule safe settings
+    scheduleEnabled: Boolean(creds.scheduleEnabled),
+    walletSchedule: creds.walletSchedule || settings.WALLET_CRON_SCHEDULE,
+    trendsSchedule: creds.trendsSchedule || settings.TRENDS_CRON_SCHEDULE,
+    zeptoSchedule: creds.zeptoSchedule || settings.ZEPTO_CRON_SCHEDULE,
   };
 }
 
@@ -198,11 +214,30 @@ function updateCredentials(updates = {}) {
     process.env.HEADED = creds.zeptoHeaded ? '1' : '0';
   }
 
+  // Auto-run schedule settings
+  if (updates.scheduleEnabled !== undefined) {
+    creds.scheduleEnabled = Boolean(updates.scheduleEnabled);
+    settings.ENABLE_AUTO_SCHEDULE = creds.scheduleEnabled;
+  }
+  if (typeof updates.walletSchedule === 'string' && updates.walletSchedule.trim()) {
+    creds.walletSchedule = updates.walletSchedule.trim();
+    settings.WALLET_CRON_SCHEDULE = creds.walletSchedule;
+  }
+  if (typeof updates.trendsSchedule === 'string' && updates.trendsSchedule.trim()) {
+    creds.trendsSchedule = updates.trendsSchedule.trim();
+    settings.TRENDS_CRON_SCHEDULE = creds.trendsSchedule;
+  }
+  if (typeof updates.zeptoSchedule === 'string' && updates.zeptoSchedule.trim()) {
+    creds.zeptoSchedule = updates.zeptoSchedule.trim();
+    settings.ZEPTO_CRON_SCHEDULE = creds.zeptoSchedule;
+  }
+
   saveCredentialsFile();
   return getSafeCredentials();
 }
 
 module.exports = {
+  loadCredentialsFile,
   getRawCredentials,
   getRawZeptoCredentials,
   getSafeCredentials,

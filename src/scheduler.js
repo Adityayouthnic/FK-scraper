@@ -14,6 +14,7 @@ const { runScrapeJob } = require('./scraper');
 const { runTrendsJob } = require('./trendsScraper');
 const { runZeptoJob } = require('./zeptoScraper');
 const { sendAlert } = require('./alerts');
+const { updateCredentials, loadCredentialsFile } = require('./credentials');
 
 let schedulerInitialized = false;
 let globalBroadcast = () => {};
@@ -161,7 +162,7 @@ function setupCronTasks() {
   }
 
   if (!settings.ENABLE_AUTO_SCHEDULE) {
-    console.log('[scheduler] Auto-scheduling is disabled.');
+    console.log('[scheduler] Auto-scheduling is OFF (Paused). No background cron jobs running.');
     return;
   }
 
@@ -224,6 +225,12 @@ function initScheduler(broadcast, isRunningGetter, isRunningSetter) {
   if (isRunningGetter) getSystemRunning = isRunningGetter;
   if (isRunningSetter) setSystemRunning = isRunningSetter;
 
+  try {
+    loadCredentialsFile();
+  } catch (err) {
+    console.warn('[scheduler] Could not load saved credentials for scheduler:', err.message);
+  }
+
   setupCronTasks();
 }
 
@@ -231,29 +238,52 @@ function initScheduler(broadcast, isRunningGetter, isRunningSetter) {
  * Dynamically update schedule timings and restart cron tasks.
  */
 function updateScheduleConfig({ enabled, walletTime, trendsTime, zeptoTime, walletSchedule, trendsSchedule, zeptoSchedule }) {
+  const updates = {};
+
   if (enabled !== undefined) {
     settings.ENABLE_AUTO_SCHEDULE = Boolean(enabled);
+    updates.scheduleEnabled = settings.ENABLE_AUTO_SCHEDULE;
   }
 
   if (walletTime) {
     const cronStr = timeToCron(walletTime, '*');
-    if (cronStr) settings.WALLET_CRON_SCHEDULE = cronStr;
+    if (cronStr) {
+      settings.WALLET_CRON_SCHEDULE = cronStr;
+      updates.walletSchedule = cronStr;
+    }
   } else if (walletSchedule && cron.validate(walletSchedule)) {
     settings.WALLET_CRON_SCHEDULE = walletSchedule;
+    updates.walletSchedule = walletSchedule;
   }
 
   if (trendsTime) {
     const cronStr = timeToCron(trendsTime, '1'); // 1 = Monday
-    if (cronStr) settings.TRENDS_CRON_SCHEDULE = cronStr;
+    if (cronStr) {
+      settings.TRENDS_CRON_SCHEDULE = cronStr;
+      updates.trendsSchedule = cronStr;
+    }
   } else if (trendsSchedule && cron.validate(trendsSchedule)) {
     settings.TRENDS_CRON_SCHEDULE = trendsSchedule;
+    updates.trendsSchedule = trendsSchedule;
   }
 
   if (zeptoTime) {
     const cronStr = timeToCron(zeptoTime, '*');
-    if (cronStr) settings.ZEPTO_CRON_SCHEDULE = cronStr;
+    if (cronStr) {
+      settings.ZEPTO_CRON_SCHEDULE = cronStr;
+      updates.zeptoSchedule = cronStr;
+    }
   } else if (zeptoSchedule && cron.validate(zeptoSchedule)) {
     settings.ZEPTO_CRON_SCHEDULE = zeptoSchedule;
+    updates.zeptoSchedule = zeptoSchedule;
+  }
+
+  if (Object.keys(updates).length > 0) {
+    try {
+      updateCredentials(updates);
+    } catch (err) {
+      console.warn('[scheduler] Failed to persist schedule to credentials:', err.message);
+    }
   }
 
   setupCronTasks();

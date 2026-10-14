@@ -56,8 +56,8 @@ const settings = {
   // a literal '/tmp' resolves to C:\tmp there, writing to the drive root.
   DOWNLOAD_DIR: process.env.DOWNLOAD_DIR || path.join(os.tmpdir(), 'fk-scraper-downloads'),
 
-  // Automated Scheduling settings
-  ENABLE_AUTO_SCHEDULE: process.env.ENABLE_AUTO_SCHEDULE !== 'false',
+  // Automated Scheduling settings (default OFF for on-demand use & Render sleep mode)
+  ENABLE_AUTO_SCHEDULE: process.env.ENABLE_AUTO_SCHEDULE === 'true',
   WALLET_CRON_SCHEDULE: process.env.WALLET_CRON_SCHEDULE || '0 7 * * *', // Daily 7:00 AM IST
   TRENDS_CRON_SCHEDULE: process.env.TRENDS_CRON_SCHEDULE || '0 8 * * 1', // Mondays 8:00 AM IST
   ZEPTO_CRON_SCHEDULE: process.env.ZEPTO_CRON_SCHEDULE || '0 14 * * *',  // Daily 2:00 PM (14:00) IST
